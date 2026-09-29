@@ -157,6 +157,9 @@ Bootstrap downloads the complete scenario dependency tree, verifies every
 Microsoft-signed PowerShell file and the signed hash manifest for non-PowerShell
 inputs, copies the payload into an administrator-protected scenario directory,
 reverifies it, and launches only `Workloads\local-ai\install.ps1`.
+Explicit `-AllowUnsigned` scenario tests use
+`%ProgramData%\CalmOS-Development`, keeping unsigned files out of the production
+`%ProgramData%\CalmOS` tree.
 
 ## What to expect
 

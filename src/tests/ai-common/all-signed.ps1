@@ -74,6 +74,27 @@ function Invoke-AllSignedProcess {
     }
 }
 
+function Copy-ReleaseScriptWithCrLf {
+    param(
+        [Parameter(Mandatory)] [string] $Source,
+        [Parameter(Mandatory)] [string] $Destination
+    )
+
+    $bytes = [IO.File]::ReadAllBytes($Source)
+    $stream = [IO.MemoryStream]::new()
+    try {
+        for ($index = 0; $index -lt $bytes.Length; $index++) {
+            if ($bytes[$index] -eq 10 -and ($index -eq 0 -or $bytes[$index - 1] -ne 13)) {
+                $stream.WriteByte(13)
+            }
+            $stream.WriteByte($bytes[$index])
+        }
+        [IO.File]::WriteAllBytes($Destination, $stream.ToArray())
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $sourceRoot = Join-Path $repositoryRoot 'src\Workloads'
 $releaseRoot = Join-Path $repositoryRoot 'Workloads'
@@ -99,26 +120,31 @@ foreach ($shell in $shells) {
         throw "$shellName did not enforce AllSigned for unsigned AI source: $($unsignedResult.Output)"
     }
 
-    $signedProbe = Get-ChildItem -LiteralPath $releaseRoot -Recurse -Filter 'install.ps1' |
+    $signedSource = Get-ChildItem -LiteralPath $releaseRoot -Recurse -Filter 'install.ps1' |
         Select-Object -First 1
-    if (-not $signedProbe) {
+    if (-not $signedSource) {
         throw 'No release workload was available for the AllSigned host contract probe.'
     }
-    $probeSignature = Get-AuthenticodeSignature -LiteralPath $signedProbe.FullName
-    if ($probeSignature.SignerCertificate -and
+    $signedProbeRoot = Join-Path $env:TEMP "devconfig-signed-probe-$([guid]::NewGuid().ToString('N'))"
+    $signedProbe = Join-Path $signedProbeRoot 'install.ps1'
+    New-Item -ItemType Directory -Path $signedProbeRoot -Force | Out-Null
+    Copy-ReleaseScriptWithCrLf -Source $signedSource.FullName -Destination $signedProbe
+    $probeSignature = Get-AuthenticodeSignature -LiteralPath $signedProbe
+    if ($probeSignature.Status -ne 'Valid' -or -not $probeSignature.SignerCertificate -or
         $probeSignature.SignerCertificate.Subject -ne $microsoftSignerSubject) {
-        throw "Signed release probe has unexpected signer '$($probeSignature.SignerCertificate.Subject)'."
+        throw "CRLF release probe failed Microsoft signature validation: $($probeSignature.Status)."
     }
-    $probeResult = Invoke-AllSignedProcess `
-        -Shell $shell `
-        -Script $signedProbe.FullName `
-        -Arguments @('-?') `
-        -PublisherConsentCount 4
-    if ($probeResult.ExitCode -ne 0) {
-        throw "$shellName could not load a valid Microsoft-signed release workload under AllSigned: $($probeResult.Output)"
-    }
-    if (-not $probeSignature.SignerCertificate) {
-        Write-Warning "$shellName could not expose the release signer's certificate through Get-AuthenticodeSignature; successful AllSigned execution remains authoritative on this host."
+    try {
+        $probeResult = Invoke-AllSignedProcess `
+            -Shell $shell `
+            -Script $signedProbe `
+            -Arguments @('-?') `
+            -PublisherConsentCount 4
+        if ($probeResult.ExitCode -ne 0) {
+            throw "$shellName could not load a valid Microsoft-signed release workload under AllSigned: $($probeResult.Output)"
+        }
+    } finally {
+        Remove-Item -LiteralPath $signedProbeRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

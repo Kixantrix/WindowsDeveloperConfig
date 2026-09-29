@@ -60,6 +60,7 @@ Assert-True ($bootstrap -match 'Join-Path \$setupDir ''steps''') 'Bootstrap shou
 Assert-True ($bootstrap -match '-AiBackend.*-AiRuntime') 'Bootstrap elevation should forward scenario selection'
 Assert-True ($bootstrap -match '-PlanOnly:\$PlanOnly') 'Bootstrap elevation should forward non-mutating plan mode'
 Assert-True ($bootstrap -match "AI backend/runtime/report options require -Scenario local-ai") 'Bootstrap should reject scenario-only options without the dispatcher'
+Assert-True ($bootstrap -match "'CalmOS-Development'") 'Unsigned scenario testing should not contaminate the production CalmOS payload'
 Assert-True ($bootstrap -match 'ElevationErrorPath') 'Bootstrap should return exact verified-elevation failures to the caller'
 Assert-True ($bootstrap -match '\$bootstrapOutput = \(& \(Join-Path \$PSHOME \$shellName\) @arguments 2>&1') 'Bootstrap should capture child output before reporting a nonzero exit'
 

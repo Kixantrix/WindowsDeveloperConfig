@@ -348,6 +348,8 @@ for branch testing), verifies/copies the full dependency tree and Windows Dev
 Config helper steps into a protected scenario root, verifies non-PowerShell
 inputs against the Microsoft-signed `_common/content-hashes.ps1`, and launches
 only the local AI scenario. It does not run the full workstation installer.
+Unsigned branch tests are isolated under `%ProgramData%\CalmOS-Development`;
+production signed payloads remain under `%ProgramData%\CalmOS`.
 
 Transitive acquisition:
 

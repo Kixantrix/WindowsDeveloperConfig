@@ -81,7 +81,12 @@ function Invoke-CalmOsBootstrap {
     }
 
     if (-not $InstallRoot) {
-        $InstallRoot = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'CalmOS'
+        $defaultInstallDirectory = if ($Scenario -and $AllowUnsigned) {
+            'CalmOS-Development'
+        } else {
+            'CalmOS'
+        }
+        $InstallRoot = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) $defaultInstallDirectory
     }
     $InstallRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($InstallRoot)
     if ($InstallRoot -notmatch '^[A-Za-z]:\\[^:]+$') {

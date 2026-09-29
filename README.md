@@ -200,7 +200,9 @@ The dispatcher downloads the full multi-file workload tree, verifies signed
 PowerShell files plus the signed hash manifest for catalog/Python/C++/CUDA
 content, copies them with shared helper steps to a protected scenario directory,
 reverifies after copy, elevates the apply run, and launches only `local-ai`—not
-the full Calm OS workstation setup.
+the full Calm OS workstation setup. Explicit `-AllowUnsigned` branch tests use
+the isolated `%ProgramData%\CalmOS-Development` root so they cannot contaminate
+the production signed `%ProgramData%\CalmOS` payload.
 
 The repository-level equivalent detects hardware, installs a contained PyTorch
 backend, adds compatible Triton when published, and proves both a tensor
