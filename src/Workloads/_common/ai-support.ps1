@@ -2,7 +2,9 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Get-AiCatalogData {
-    return Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'ai-catalog.psd1')
+    Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop
+    return Microsoft.PowerShell.Utility\Import-PowerShellDataFile `
+        -LiteralPath (Join-Path $PSScriptRoot 'ai-catalog.psd1')
 }
 
 function Get-AiCapabilityMatrix {
