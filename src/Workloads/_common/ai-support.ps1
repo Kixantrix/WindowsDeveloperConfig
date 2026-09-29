@@ -751,7 +751,8 @@ function Resolve-OllamaInstallPlan {
     return [pscustomobject]@{
         Method = 'GitHubRelease'
         PackageId = $null
-        LaunchMode = 'Serve'
+        LaunchMode = 'ManagedStartup'
+        InstallType = 'native-arm64-managed-archive'
     }
 }
 
@@ -816,6 +817,173 @@ function Get-AiProcessIds {
     return @($ProcessObjects |
         ForEach-Object { Get-AiProcessId -ProcessObject $_ } |
         Where-Object { $null -ne $_ })
+}
+
+function Get-AiPeArchitecture {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    $reader = [IO.BinaryReader]::new($stream)
+    try {
+        if ($reader.ReadUInt16() -ne 0x5A4D) {
+            throw "'$Path' is not a PE executable."
+        }
+        $stream.Position = 0x3C
+        $peOffset = $reader.ReadInt32()
+        $stream.Position = $peOffset
+        if ($reader.ReadUInt32() -ne 0x00004550) {
+            throw "'$Path' has an invalid PE signature."
+        }
+        $machine = $reader.ReadUInt16()
+        switch ($machine) {
+            43620 { return 'Arm64' }
+            34404 { return 'X64' }
+            332 { return 'X86' }
+            default { return ('Unknown-0x{0:X4}' -f $machine) }
+        }
+    } finally {
+        $reader.Dispose()
+        $stream.Dispose()
+    }
+}
+
+function Get-OllamaManagedPaths {
+    [CmdletBinding()]
+    param([string] $LocalAppData = $env:LOCALAPPDATA)
+
+    $installRoot = Join-Path $LocalAppData 'Programs\Ollama'
+    return [pscustomobject]@{
+        InstallRoot = $installRoot
+        Executable = Join-Path $installRoot 'ollama.exe'
+        InstallManifest = Join-Path $installRoot '.devconfig-install.json'
+        VersionMarker = '.devconfig-version'
+        CacheDirectory = Join-Path $LocalAppData 'DevConfig\ollama\asset-cache'
+        LegacyRoot = Join-Path $LocalAppData 'DevConfig\ollama\runtime'
+        StartupRegistryPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+        StartupValueName = 'WindowsDeveloperConfig.Ollama'
+    }
+}
+
+function Get-OllamaStartupCommand {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [string] $Executable)
+    return '"' + $Executable.Replace('"', '\"') + '" serve'
+}
+
+function Get-OllamaManagedProcesses {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [string] $InstallRoot)
+
+    $resolvedRoot = [IO.Path]::GetFullPath($InstallRoot).TrimEnd('\')
+    $rootPrefix = "$resolvedRoot\"
+    return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            if (-not $_.ExecutablePath) {
+                $false
+            } else {
+                $executablePath = [IO.Path]::GetFullPath([string]$_.ExecutablePath)
+                $executablePath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)
+            }
+        })
+}
+
+function Stop-OllamaManagedProcesses {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $InstallRoot,
+        [int] $TimeoutSeconds = 30
+    )
+
+    $processes = @(Get-OllamaManagedProcesses -InstallRoot $InstallRoot)
+    $ids = @(Get-AiProcessIds -ProcessObjects $processes)
+    foreach ($processId in $ids) {
+        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($processId in $ids) {
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        while (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
+            if ((Get-Date) -ge $deadline) {
+                throw "Managed Ollama process $processId did not exit within $TimeoutSeconds seconds."
+            }
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    return $ids
+}
+
+function Set-OllamaStartupRegistration {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $RegistryPath,
+        [Parameter(Mandatory)] [string] $ValueName,
+        [Parameter(Mandatory)] [string] $Executable
+    )
+    New-Item -Path $RegistryPath -Force | Out-Null
+    $command = Get-OllamaStartupCommand -Executable $Executable
+    Set-ItemProperty -LiteralPath $RegistryPath -Name $ValueName -Value $command -Type String
+    return $command
+}
+
+function Remove-OllamaStartupRegistration {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $RegistryPath,
+        [Parameter(Mandatory)] [string] $ValueName
+    )
+    if (Test-Path -LiteralPath $RegistryPath) {
+        Remove-ItemProperty -LiteralPath $RegistryPath -Name $ValueName -ErrorAction SilentlyContinue
+    }
+}
+
+function Remove-OllamaManagedDirectory {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [ValidateRange(1, 30)] [int] $Attempts = 10
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $lastError = $null
+    foreach ($attempt in 1..$Attempts) {
+        try {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+            if (-not (Test-Path -LiteralPath $Path)) { return }
+        } catch {
+            $lastError = $_
+        }
+        if ($attempt -lt $Attempts) { Start-Sleep -Milliseconds 500 }
+    }
+    throw "Could not remove the Dev Config-managed Ollama path '$Path' after $Attempts attempts: $($lastError.Exception.Message)"
+}
+
+function Remove-OllamaManagedInstallation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $Paths,
+        [Parameter(Mandatory)] [string] $ModelRoot,
+        [switch] $RemoveModels
+    )
+
+    $stopped = @(Stop-OllamaManagedProcesses -InstallRoot $Paths.InstallRoot)
+    Remove-OllamaStartupRegistration `
+        -RegistryPath $Paths.StartupRegistryPath `
+        -ValueName $Paths.StartupValueName
+    Remove-UserPathEntry -Path $Paths.InstallRoot
+    Remove-UserPathEntry -Path $Paths.LegacyRoot
+    Remove-OllamaManagedDirectory -Path $Paths.InstallRoot
+    Remove-OllamaManagedDirectory -Path $Paths.LegacyRoot
+    Remove-OllamaManagedDirectory -Path $Paths.CacheDirectory
+    if ($RemoveModels) {
+        Remove-OllamaManagedDirectory -Path $ModelRoot
+    }
+    return [pscustomobject]@{
+        StoppedManagedProcessIds = $stopped
+        StartupRemoved = $true
+        PathRemoved = $true
+        RuntimeRemoved = -not (Test-Path -LiteralPath $Paths.InstallRoot)
+        ModelsPreserved = -not $RemoveModels
+    }
 }
 
 function Get-AiFreeTcpPort {
@@ -1634,6 +1802,21 @@ function Assert-CommandAvailable {
     return $command
 }
 
+function Get-AiUpdatedPathValue {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()] [string] $CurrentValue,
+        [Parameter(Mandatory)] [string] $Path,
+        [switch] $Prepend
+    )
+
+    $entries = @($CurrentValue -split ';' | Where-Object { $_ -and $_ -ne $Path })
+    if ($Prepend) {
+        return (@($Path) + $entries) -join ';'
+    }
+    return (@($entries) + $Path) -join ';'
+}
+
 function Add-UserPathEntry {
     [CmdletBinding()]
     param(
@@ -1642,19 +1825,11 @@ function Add-UserPathEntry {
     )
 
     $current = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $currentEntries = @($current -split ';' | Where-Object { $_ })
-    if ($Prepend) {
-        $entries = @($currentEntries | Where-Object { $_ -ne $Path })
-        [Environment]::SetEnvironmentVariable('Path', ((@($Path) + $entries) -join ';'), 'User')
-    } elseif ($Path -notin $currentEntries) {
-        [Environment]::SetEnvironmentVariable('Path', ((@($currentEntries) + $Path) -join ';'), 'User')
-    }
-    if ($Prepend) {
-        $processEntries = @($env:Path -split ';' | Where-Object { $_ -and $_ -ne $Path })
-        $env:Path = (@($Path) + $processEntries) -join ';'
-    } elseif ($Path -notin @($env:Path -split ';')) {
-        $env:Path = "$Path;$env:Path"
-    }
+    [Environment]::SetEnvironmentVariable(
+        'Path',
+        (Get-AiUpdatedPathValue -CurrentValue $current -Path $Path -Prepend:$Prepend),
+        'User')
+    $env:Path = Get-AiUpdatedPathValue -CurrentValue $env:Path -Path $Path -Prepend:$Prepend
 }
 
 function Install-VerifiedDirectorySwap {
@@ -2179,7 +2354,8 @@ function Install-VerifiedGitHubLatestAsset {
         [Parameter(Mandatory)] [string] $AssetPattern,
         [Parameter(Mandatory)] [string] $Destination,
         [Parameter(Mandatory)] [string] $VersionMarker,
-        [Parameter(Mandatory)] [string] $RequiredFile
+        [Parameter(Mandatory)] [string] $RequiredFile,
+        [string] $CacheDirectory = ''
     )
 
     $headers = @{
@@ -2207,17 +2383,45 @@ function Install-VerifiedGitHubLatestAsset {
     if ((Test-Path -LiteralPath $markerPath) -and
         (Test-Path -LiteralPath (Join-Path $Destination $RequiredFile)) -and
         ((Get-Content -LiteralPath $markerPath -Raw).Trim() -eq $selection)) {
-        return [pscustomobject]@{ Tag = $release.tag_name; Asset = $asset; Action = 'already-current' }
+        $cachedAsset = if ($CacheDirectory) {
+            Join-Path (Join-Path $CacheDirectory $release.tag_name) $asset.name
+        } else { $null }
+        return [pscustomobject]@{
+            Tag = $release.tag_name
+            Asset = $asset
+            Action = 'already-current'
+            CachePath = $cachedAsset
+        }
     }
 
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "devconfig-$([guid]::NewGuid().ToString('N'))"
-    $archive = Join-Path $tempRoot $asset.name
+    $expected = $asset.digest.Substring(7)
+    $archive = if ($CacheDirectory) {
+        $releaseCache = Join-Path $CacheDirectory $release.tag_name
+        New-Item -ItemType Directory -Path $releaseCache -Force | Out-Null
+        Join-Path $releaseCache $asset.name
+    } else {
+        Join-Path $tempRoot $asset.name
+    }
     $expanded = Join-Path $tempRoot 'expanded'
     New-Item -ItemType Directory -Path $expanded -Force | Out-Null
     try {
-        Invoke-WebRequest -Uri $asset.browser_download_url -Headers $headers -OutFile $archive -UseBasicParsing
+        $cacheValid = (Test-Path -LiteralPath $archive) -and
+            ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -eq $expected)
+        if (-not $cacheValid) {
+            $downloadPath = "$archive.download-$([guid]::NewGuid().ToString('N'))"
+            try {
+                Invoke-WebRequest -Uri $asset.browser_download_url -Headers $headers -OutFile $downloadPath -UseBasicParsing
+                $downloadHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash
+                if ($downloadHash -ne $expected) {
+                    throw "SHA-256 mismatch for '$($asset.name)'. Expected $expected; got $downloadHash."
+                }
+                Move-Item -LiteralPath $downloadPath -Destination $archive -Force
+            } finally {
+                Remove-Item -LiteralPath $downloadPath -Force -ErrorAction SilentlyContinue
+            }
+        }
         $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
-        $expected = $asset.digest.Substring(7)
         if ($actual -ne $expected) {
             throw "SHA-256 mismatch for '$($asset.name)'. Expected $expected; got $actual."
         }
@@ -2232,7 +2436,12 @@ function Install-VerifiedGitHubLatestAsset {
             Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
-    return [pscustomobject]@{ Tag = $release.tag_name; Asset = $asset; Action = 'installed-or-upgraded' }
+    return [pscustomobject]@{
+        Tag = $release.tag_name
+        Asset = $asset
+        Action = 'installed-or-upgraded'
+        CachePath = $archive
+    }
 }
 
 function Wait-JsonEndpoint {

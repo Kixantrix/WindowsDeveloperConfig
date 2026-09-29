@@ -53,7 +53,7 @@ Assert-True ($bootstrap -match "ValidateSet\('', 'local-ai'\)") 'Bootstrap shoul
 Assert-True ($bootstrap -match 'Workloads\\local-ai\\install\.ps1') 'Bootstrap should route to the scenario without running dev-config.ps1'
 Assert-True ($bootstrap -match 'Assert-DevConfigMicrosoftSigned -Directory \$workloadsDir') 'Signed scenario payload should be Microsoft-signature verified'
 Assert-True ($bootstrap -match 'Assert-DevConfigWorkloadContent -WorkloadsRoot \$workloadsDir') 'Signed scenario should verify non-PowerShell content before copy'
-Assert-True ($bootstrap -match 'Assert-DevConfigWorkloadContent -WorkloadsRoot \(Join-Path \$InstallRoot ''Workloads''\)') 'Installed scenario content should be reverified after protected copy'
+Assert-True ($bootstrap -match 'Assert-DevConfigWorkloadContent -WorkloadsRoot \(Join-Path \$scenarioRoot ''Workloads''\)') 'Installed scenario content should be reverified after protected copy'
 Assert-True ($bootstrap -match 'Assert-DevConfigProtectedTree -Directory \$workloadsDir') 'Scenario payload should be protected before copy'
 Assert-True ($bootstrap -match 'Copy-Item -LiteralPath \$workloadsDir') 'Bootstrap should copy the complete multi-file Workloads dependency tree'
 Assert-True ($bootstrap -match 'Join-Path \$setupDir ''steps''') 'Bootstrap should copy the shared Windows Dev Config helper steps'

@@ -328,21 +328,23 @@
             CleanupUpgrade = 'WinGet upgrade; ollama rm for models'
         }
         OllamaArm64 = @{
-            Component = 'Ollama portable'
+            Component = 'Ollama managed native ARM64 application'
             Vendor = 'Ollama'
             Architectures = @('Arm64')
             Maturity = 'stable-direct'
-            SourceType = 'github-latest-release'
+            SourceType = 'native-arm64-managed-archive'
             Repository = 'ollama/ollama'
             AssetPattern = '^ollama-windows-arm64\.zip$'
             VersionPolicy = 'latest non-prerelease release'
             Integrity = 'GitHub release asset SHA-256 digest'
-            CachePath = '%LOCALAPPDATA%\DevConfig\ollama\runtime'
-            InstallPath = '%LOCALAPPDATA%\DevConfig\ollama\runtime'
-            NormalChannelLimitation = 'Ollama.Ollama is x64-only and Ollama.Ollama.Portable lags the official release'
-            ExpectedStableSource = 'Ollama.Ollama or Ollama.Ollama.Portable with current ARM64 payload'
-            MigrationTrigger = 'WinGet publishes current ARM64 payload and API/model acceptance passes'
-            CleanupUpgrade = 'Atomically replace resolver-owned runtime directory'
+            CachePath = '%LOCALAPPDATA%\DevConfig\ollama\asset-cache'
+            InstallPath = '%LOCALAPPDATA%\Programs\Ollama'
+            StartupRegistration = 'HKCU Run: WindowsDeveloperConfig.Ollama'
+            InstallManifest = '%LOCALAPPDATA%\Programs\Ollama\.devconfig-install.json'
+            NormalChannelLimitation = 'Ollama.Ollama uses the x64 setup EXE; upstream publishes native ARM64 only as an archive'
+            ExpectedStableSource = 'Official ARM64 setup EXE or architecture-correct non-portable WinGet payload'
+            MigrationTrigger = 'Official managed ARM64 installer/package appears and passes native process, API, model, and backend-allocation acceptance'
+            CleanupUpgrade = 'Stop only Dev Config-managed processes; reuse verified cache; atomic runtime replacement; preserve models by default on uninstall'
         }
         AmdRocm = @{
             Component = 'AMD ROCm Core SDK'

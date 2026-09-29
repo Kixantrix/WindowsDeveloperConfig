@@ -311,7 +311,7 @@ flows:
 
   - id: ollama
     name: Ollama
-    description: Ollama service plus official qwen3:0.6b pull and inference
+    description: Installed x64 or managed native ARM64 Ollama runtime plus qwen3:0.6b inference
     category: ai
     tags: [ai, ollama, local-models, inference, api]
     icon: 🦙

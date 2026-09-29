@@ -162,7 +162,7 @@ If that fails or `winget configure` is still not recognized, see [Troubleshootin
 | PyTorch | CPython 3.13 + contained CPU/CUDA/ROCm/XPU environment; vendor-appropriate Triton where supported | `.\Workloads\pytorch\install.ps1` |
 | Local AI development | Hardware inventory + contained PyTorch/Triton + optional one local-model runtime | `.\Workloads\local-ai\install.ps1` |
 | llama.cpp | Hardware-selected official rolling CUDA/ROCm/SYCL/OpenVINO/Vulkan/OpenCL/CPU runtime + pinned GGUF inference | `.\Workloads\llama.cpp\install.ps1` |
-| Ollama | WinGet x64 or verified current ARM64 release + official qwen3:0.6b inference | `.\Workloads\ollama\install.ps1` |
+| Ollama | Installed x64 application or Dev Config-managed native ARM64 archive + official qwen3:0.6b inference | `.\Workloads\ollama\install.ps1` |
 
 Want the PATH refresh in your current shell? Use the matching shim instead of calling `winget configure` directly:
 
@@ -279,7 +279,7 @@ NVIDIA, AMD, Intel, and Qualcomm execution providers.
 | llama.cpp OpenCL Adreno ARM64 | Unsupported | Policy-approved, physically qualified `b10917` Qualcomm Adreno OpenCL asset | Requires a detected Qualcomm/Adreno GPU plus the Windows OpenCL loader and proves OpenCL/Adreno offload. |
 | llama.cpp Vulkan x64 fallback | Official rolling Vulkan asset | Unsupported | Used by Auto only after no supported vendor-native backend is available and a Vulkan loader/device exists. Reports Vulkan explicitly. |
 | llama.cpp CPU fallback | Official rolling CPU asset | Official rolling CPU asset | Used when no qualified accelerator exists or explicitly requested; benchmark must show no GPU layers. |
-| Ollama | WinGet desktop package | Verified current official ARM64 ZIP | Starts or reuses `ollama serve`, pulls official `qwen3:0.6b`, verifies its model blob, and performs structured inference. |
+| Ollama | Official WinGet installer | Official native ARM64 archive installed as a managed per-user application | ARM64 installs atomically under `%LOCALAPPDATA%\Programs\Ollama`, registers user startup/PATH, verifies native architecture/model/backend, and supports model-preserving uninstall. |
 
 ### Exact quick-run and coding-demo commands
 
@@ -294,6 +294,20 @@ The default model checks are intentionally small enough for setup validation:
 
 .\Workloads\foundry\install.ps1
 # Expected: FOUNDRY_READY: ... provider=<actual EP> and INSTALL_OK: foundry
+```
+
+On x64, Ollama remains a normally registered WinGet application. On ARM64,
+Dev Config verifies the official native `ollama-windows-arm64.zip`, installs it
+atomically under `%LOCALAPPDATA%\Programs\Ollama`, prepends that directory to
+the user PATH, and registers `ollama serve` in the current user's Run key.
+The `.devconfig-install.json` marker records the release tag, asset digest,
+installed files, architecture, and source. Upgrade stops only processes whose
+executable is inside that managed directory. To remove the managed ARM64
+application while retaining downloaded models:
+
+```powershell
+.\Workloads\ollama\install.ps1 -Uninstall
+# Add -RemoveModels only when model data should also be deleted.
 ```
 
 For a more useful coding demonstration, after the llama.cpp flow succeeds:
@@ -426,11 +440,15 @@ kernel acceptance tests.
 
 **Hardware validation status:** Windows ARM64 on NVIDIA RTX Spark N1X is
 validated end-to-end for CUDA, PyTorch CUDA, Triton, Foundry Local, llama.cpp,
-and Ollama. The final Ollama rerun used a resolver-owned loopback endpoint,
-runtime 0.34.0, the verified `qwen3:0.6b` digest, real inference, and `/api/ps`
-reporting 100% GPU. The optional Qwen2.5-Coder-1.5B demo also generated the
-requested `group_anagrams` Python implementation through llama.cpp CUDA at
-101.7 generation tokens/s. AMD ROCm/HIP, Intel OpenVINO/oneAPI/XPU, NVIDIA x64
+and Ollama. The managed Ollama ARM64 acceptance installed native runtime
+0.34.4 under `%LOCALAPPDATA%\Programs\Ollama`, migrated the prior Dev Config
+runtime, registered PATH/startup, verified the official release digest and
+`qwen3:0.6b` model digest, performed real inference at `/api/ps` 100% GPU, and
+left the persistent endpoint ready on `127.0.0.1:11434`. An idempotent rerun
+reported `already-current`; model-preserving uninstall and reinstall also
+passed. The optional Qwen2.5-Coder-1.5B demo generated the requested
+`group_anagrams` Python implementation through llama.cpp CUDA at 101.7
+generation tokens/s. AMD ROCm/HIP, Intel OpenVINO/oneAPI/XPU, NVIDIA x64
 llama.cpp CUDA, and Qualcomm ARM64 llama.cpp OpenCL are hardware-gated and
 ready for partner execution. Their current gap is physical partner hardware
 coverage, not static planning, asset discovery, or unit coverage.
@@ -480,7 +498,7 @@ change after the stated detection rule and real hardware acceptance pass.
 | Foundry Local | WinGet `Microsoft.FoundryLocal` 0.10.3 | Qualified preview | **Candidate:** official non-prerelease v2.0.1; Python metadata still labels the SDK alpha | v2 changes the CLI/SDK contract and has not passed x64/ARM64 provider, inference, and cached-rerun acceptance | Install/migration, EP registration, real inference, truthful fallback on both architectures | Tracked |
 | llama.cpp backends | Official rolling `bNNNNN` assets; Qualcomm pinned to policy-approved `b10917` | Rolling | No stable backend-specific Windows channel | WinGet exposes only x64 Vulkan and cannot represent the required backend matrix | Backend/device, actual offloaded layers, inference, policy acceptance | Tracked |
 | Ollama x64 | WinGet `Ollama.Ollama` | Stable | Yes | Selected | API/model/backend evidence | Current |
-| Ollama ARM64 | Latest official stable ARM64 ZIP | Official stable direct | No current equivalent WinGet payload | Promote when WinGet catches the official ARM64 release | Owned endpoint, version, digest, inference, allocation evidence | Tracked |
+| Ollama ARM64 | Latest official `ollama-windows-arm64.zip`, converted to a managed Dev Config application | Official native ARM64 archive; managed install semantics supplied by Dev Config | No official ARM64 setup EXE/current non-portable WinGet payload | Promote when an upstream managed ARM64 installer/package passes acceptance | Native PE, managed endpoint, version, digest, inference, allocation, upgrade/uninstall | Tracked |
 | ROCm/HIP x64 | AMD stable ROCm feed, exact device/gfx tuple | Stable | Yes | Selected; WinGet identity unconfirmed | Compiled HIP kernel on supported AMD GPU | Current |
 | Intel OpenVINO / oneAPI x64 | Official PyPI OpenVINO tuple / WinGet oneAPI | Stable | Yes | Selected | Requested-device inference / SYCL kernel | Current |
 
@@ -501,7 +519,7 @@ change after the stated detection rule and real hardware acceptance pass.
 | llama.cpp Vulkan x64 | Cross-vendor / x64 | Latest official rolling Vulkan asset | GitHub asset SHA-256 digest | Current WinGet package cannot coexist as explicit backend variants | `ggml.llamacpp` Vulkan with reliable backend identity | Package backend/version evidence and Vulkan inference pass |
 | llama.cpp CPU x64/ARM64 | CPU / x64, ARM64 | Latest official rolling CPU asset | GitHub asset SHA-256 digest | WinGet lacks ARM64 and backend-selectable CPU variants | Backend-specific `ggml.llamacpp` CPU variants, unconfirmed | Package variants appear and CPU inference passes |
 | Foundry Local | Cross-vendor / x64, ARM64 | Qualified WinGet 0.10.3 preview; official v2.0.1 tracked | WinGet signature; v2 release hashes recorded | v2 CLI/SDK migration and target-hardware qualification pending | Official v2 release / current stable WinGet | x64+ARM64 provider/inference/cached rerun pass |
-| Ollama ARM64 | CPU/NVIDIA / ARM64 | Latest stable official `ollama-windows-arm64.zip` | GitHub asset SHA-256 | Desktop WinGet ID is x64; portable package can lag | Current ARM64 WinGet payload, package ID unconfirmed | WinGet catches current release and API/GPU evidence passes |
+| Ollama ARM64 | CPU/NVIDIA / ARM64 | Latest stable official `ollama-windows-arm64.zip`, installed at `%LOCALAPPDATA%\Programs\Ollama` with manifest/startup/PATH lifecycle | GitHub asset SHA-256 | Upstream has no ARM64 setup EXE; x64 setup is never emulated and portable WinGet is not used | Official ARM64 installer or architecture-correct managed WinGet payload | Managed package passes native PE/API/model/backend/upgrade/uninstall acceptance |
 
 ### Partner validation commands
 
