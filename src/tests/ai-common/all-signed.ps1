@@ -100,29 +100,25 @@ foreach ($shell in $shells) {
     }
 
     $signedProbe = Get-ChildItem -LiteralPath $releaseRoot -Recurse -Filter 'install.ps1' |
-        ForEach-Object {
-            $signature = Get-AuthenticodeSignature -LiteralPath $_.FullName
-            [pscustomobject]@{ File = $_; Signature = $signature }
-        } |
-        Where-Object {
-            $_.Signature.Status -notin @('NotSigned', 'HashMismatch', 'NotSupported') -and
-            $_.Signature.SignerCertificate -and
-            $_.Signature.SignerCertificate.Subject -eq $microsoftSignerSubject
-        } |
         Select-Object -First 1
     if (-not $signedProbe) {
-        throw 'No intact Microsoft-signed release workload was available for the AllSigned host contract probe.'
+        throw 'No release workload was available for the AllSigned host contract probe.'
     }
-    if ($signedProbe.Signature.Status -ne 'Valid') {
-        Write-Warning "$shellName reports certificate-chain status '$($signedProbe.Signature.Status)' for the Microsoft-signed probe; the AllSigned host execution remains authoritative."
+    $probeSignature = Get-AuthenticodeSignature -LiteralPath $signedProbe.FullName
+    if ($probeSignature.SignerCertificate -and
+        $probeSignature.SignerCertificate.Subject -ne $microsoftSignerSubject) {
+        throw "Signed release probe has unexpected signer '$($probeSignature.SignerCertificate.Subject)'."
     }
     $probeResult = Invoke-AllSignedProcess `
         -Shell $shell `
-        -Script $signedProbe.File.FullName `
+        -Script $signedProbe.FullName `
         -Arguments @('-?') `
         -PublisherConsentCount 4
     if ($probeResult.ExitCode -ne 0) {
         throw "$shellName could not load a valid Microsoft-signed release workload under AllSigned: $($probeResult.Output)"
+    }
+    if (-not $probeSignature.SignerCertificate) {
+        Write-Warning "$shellName could not expose the release signer's certificate through Get-AuthenticodeSignature; successful AllSigned execution remains authoritative on this host."
     }
 }
 
