@@ -118,7 +118,8 @@ function Invoke-CalmOsBootstrap {
             [ValidateSet('None', 'LlamaCpp', 'Ollama', 'Foundry')] [string] $AiRuntime = 'None',
             [switch] $RequireTriton,
             [switch] $PlanOnly,
-            [string] $ReportRoot
+            [string] $ReportRoot,
+            [Parameter(Mandatory)] [string] $ElevationErrorPath
         )
 
         $launcher = {
@@ -134,11 +135,21 @@ function Invoke-CalmOsBootstrap {
                 [ValidateSet('None', 'LlamaCpp', 'Ollama', 'Foundry')] [string] $AiRuntime = 'None',
                 [switch] $RequireTriton,
                 [switch] $PlanOnly,
-                [string] $ReportRoot
+                [string] $ReportRoot,
+                [Parameter(Mandatory)] [string] $ElevationErrorPath
             )
 
             $ErrorActionPreference = 'Stop'
             Set-StrictMode -Version Latest
+            trap {
+                try {
+                    [IO.File]::WriteAllText(
+                        $ElevationErrorPath,
+                        ($_ | Out-String),
+                        [Text.UTF8Encoding]::new($false))
+                } catch { }
+                exit 1
+            }
             [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
             $flow = if ($AllowUnsigned) { 'src/windows-dev-config' } else { 'windows-dev-config' }
             $baseUri = "https://raw.githubusercontent.com/microsoft/WindowsDeveloperConfig/$Ref/$flow"
@@ -189,16 +200,19 @@ function Invoke-CalmOsBootstrap {
             }
             if ($AllowUnsigned) { $arguments += '-AllowUnsigned' }
             if ($NoLaunch) { $arguments += '-NoLaunch' }
-            & (Join-Path $PSHOME $shellName) @arguments
-            if ($LASTEXITCODE -ne 0) {
-                throw "Bootstrap finished with exit code $LASTEXITCODE."
+            $bootstrapOutput = (& (Join-Path $PSHOME $shellName) @arguments 2>&1 | Out-String).Trim()
+            $bootstrapExitCode = $LASTEXITCODE
+            if ($bootstrapOutput) { Write-Host $bootstrapOutput }
+            if ($bootstrapExitCode -ne 0) {
+                throw "Bootstrap finished with exit code $bootstrapExitCode.`n$bootstrapOutput"
             }
         }
 
         # PowerShell also recognizes smart quotes as string delimiters.
         $escapedRef = [Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($Ref)
         $escapedRoot = [Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($InstallRoot)
-        $command = "& {`n$launcher`n} -Ref '$escapedRef' -InstallRoot '$escapedRoot'"
+        $escapedErrorPath = [Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($ElevationErrorPath)
+        $command = "& {`n$launcher`n} -Ref '$escapedRef' -InstallRoot '$escapedRoot' -ElevationErrorPath '$escapedErrorPath'"
         if ($Scenario) {
             $command += " -Scenario '$Scenario' -AiBackend '$AiBackend' -AiRuntime '$AiRuntime'"
             if ($RequireTriton) { $command += ' -RequireTriton' }
@@ -249,14 +263,23 @@ function Invoke-CalmOsBootstrap {
                 throw "'$refName' doesn't contain the '$Workload' workload under $flow. Check the workload name, or pick a newer -Ref."
             }
         }
+        $elevationErrorPath = Join-Path $env:TEMP "CalmOS-bootstrap-error-$([guid]::NewGuid().ToString('N')).txt"
         $command = Get-CalmOsElevationCommand -Ref $Ref -InstallRoot $InstallRoot -AllowUnsigned:$AllowUnsigned -NoLaunch:$NoLaunch `
             -Action $Action -Workload $Workload -Scenario $Scenario -AiBackend $AiBackend -AiRuntime $AiRuntime `
-            -RequireTriton:$RequireTriton -PlanOnly:$PlanOnly -ReportRoot $ReportRoot
+            -RequireTriton:$RequireTriton -PlanOnly:$PlanOnly -ReportRoot $ReportRoot `
+            -ElevationErrorPath $elevationErrorPath
         Write-Host 'Setup needs Administrator rights (a UAC prompt will appear)...' -ForegroundColor Yellow
         $proc = Start-Process -FilePath $shell -ArgumentList ($arguments + @('-Command', $command)) -Verb RunAs -Wait -PassThru
         if ($proc.ExitCode -ne 0) {
-            throw "Elevated setup exited with code $($proc.ExitCode). No further setup was started."
+            $detail = if (Test-Path -LiteralPath $elevationErrorPath) {
+                (Get-Content -LiteralPath $elevationErrorPath -Raw).Trim()
+            } else {
+                'The elevated process did not return diagnostic output.'
+            }
+            Remove-Item -LiteralPath $elevationErrorPath -Force -ErrorAction SilentlyContinue
+            throw "Elevated setup exited with code $($proc.ExitCode). No further setup was started.`n$detail"
         }
+        Remove-Item -LiteralPath $elevationErrorPath -Force -ErrorAction SilentlyContinue
         if ($NoLaunch) {
             if ($Scenario) {
                 $scenarioTarget = Join-Path $InstallRoot 'Scenarios\local-ai\Workloads\local-ai\install.ps1'
