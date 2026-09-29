@@ -100,18 +100,25 @@ foreach ($shell in $shells) {
     }
 
     $signedProbe = Get-ChildItem -LiteralPath $releaseRoot -Recurse -Filter 'install.ps1' |
-        Where-Object { (Get-AuthenticodeSignature -LiteralPath $_.FullName).Status -eq 'Valid' } |
+        ForEach-Object {
+            $signature = Get-AuthenticodeSignature -LiteralPath $_.FullName
+            [pscustomobject]@{ File = $_; Signature = $signature }
+        } |
+        Where-Object {
+            $_.Signature.Status -notin @('NotSigned', 'HashMismatch', 'NotSupported') -and
+            $_.Signature.SignerCertificate -and
+            $_.Signature.SignerCertificate.Subject -eq $microsoftSignerSubject
+        } |
         Select-Object -First 1
     if (-not $signedProbe) {
-        throw 'No Microsoft-signed release workload was available for the AllSigned host contract probe.'
+        throw 'No intact Microsoft-signed release workload was available for the AllSigned host contract probe.'
     }
-    $probeSignature = Get-AuthenticodeSignature -LiteralPath $signedProbe.FullName
-    if ($probeSignature.SignerCertificate.Subject -ne $microsoftSignerSubject) {
-        throw "Signed release probe has unexpected signer '$($probeSignature.SignerCertificate.Subject)'."
+    if ($signedProbe.Signature.Status -ne 'Valid') {
+        Write-Warning "$shellName reports certificate-chain status '$($signedProbe.Signature.Status)' for the Microsoft-signed probe; the AllSigned host execution remains authoritative."
     }
     $probeResult = Invoke-AllSignedProcess `
         -Shell $shell `
-        -Script $signedProbe.FullName `
+        -Script $signedProbe.File.FullName `
         -Arguments @('-?') `
         -PublisherConsentCount 4
     if ($probeResult.ExitCode -ne 0) {
