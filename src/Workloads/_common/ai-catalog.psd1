@@ -665,7 +665,7 @@
             Workload = 'ollama'; Architecture = 'Arm64'; Vendor = 'Source-managed'; DeviceFamily = 'Ollama-selected CPU/NVIDIA'; Backend = 'Ollama'
             Status = 'source-managed'; Maturity = 'stable-direct'; Acquisition = @('component:OllamaArm64')
             Prerequisites = 'Windows ARM64'
-            Resolver = 'Resolve-OllamaInstallPlan'; ResolverArguments = @{ Architecture = 'Arm64' }; Expected = @{ Method = 'GitHubRelease'; LaunchMode = 'Serve' }
+            Resolver = 'Resolve-OllamaInstallPlan'; ResolverArguments = @{ Architecture = 'Arm64' }; Expected = @{ Method = 'GitHubRelease'; LaunchMode = 'ManagedStartup'; InstallType = 'native-arm64-managed-archive' }
             ProbePath = 'src/Workloads/ollama/install.ps1'; ReportEvidence = 'model digest/inference, actual process backend and CPU/GPU VRAM allocation; no Adreno claim'
             PartnerCommand = '.\src\Workloads\ollama\install.ps1 -ReportPath "$env:TEMP\ollama-arm64-report.json"'
         }

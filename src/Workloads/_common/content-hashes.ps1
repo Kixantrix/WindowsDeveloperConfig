@@ -1,5 +1,5 @@
 $Script:DevConfigWorkloadContentHashes = @{
-    '_common\ai-catalog.psd1' = '779632324ddb3d8e4c92ac16d11adfae1f54deb86e82b791edcbbb6b7da1911a'
+    '_common\ai-catalog.psd1' = '6665b7cf7259fc0837fe4786f519c5043885eded3304dc0fe788837b937f7804'
     'cuda\smoke.cu' = '6252383bda8856daa14c4f315961e17d4de3bdba1cba6bf4c09a5d0aa52a2a6f'
     'dotnet\configuration.winget' = 'cba2c6873cee7eff241b6d7698d773f8575cfc60a6e9d7dbb8986f4ecea5c048'
     'go\configuration.winget' = '552e6fe17baa47df8d1f429735cdd718bdb61b052a86cc47e8f8c6c2cd22232c'
