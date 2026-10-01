@@ -215,6 +215,7 @@ Assert-True ($installScript -match 'deviceIndex = \$DeviceIndex') 'PyTorch shoul
 Assert-True ($probeScript -match '\$state\.deviceIndex') 'PyTorch probe should read the durable selected adapter state'
 Assert-True ($installScript -match 'Get-Python313Path') 'PyTorch should select the installed Python 3.13 explicitly'
 Assert-True ($supportScript -match 'print\(sys\.version_info\.major,sys\.version_info\.minor,sep=chr\(46\)\)') 'Python version probing should survive Windows PowerShell 5.1 native argument quoting'
+Assert-True ($supportScript -match 'devconfig-python-versions-') 'Multiline Python environment probing should use a temporary script file under Windows PowerShell 5.1'
 Assert-True ($installScript -match 'Import-MsvcEnvironment') 'Triton path should import the architecture-native MSVC build environment'
 Assert-True ((Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Workloads\_common\ai-support.ps1') -Raw) -like '*PATH=$vsInstaller;%PATH%*') 'Triton compiler environment should put vswhere.exe on PATH before VsDevCmd runs'
 Assert-True ($installScript -match 'Ensure-AiVisualCppTools') 'Triton should acquire its JIT compiler through direct shared setup'

@@ -1425,6 +1425,11 @@ function Test-PyTorchEnvironmentMatches {
     }
 
     $desired = $DesiredStateJson | ConvertFrom-Json
+    foreach ($requiredProperty in @('torch', 'numpy', 'triton')) {
+        if ($InstalledVersions.PSObject.Properties.Name -notcontains $requiredProperty) {
+            return $false
+        }
+    }
     if ($InstalledVersions.torch -ne $desired.torchVersion -or
         $InstalledVersions.numpy -ne $desired.numpyVersion) {
         return $false
@@ -1443,10 +1448,14 @@ function Test-PyTorchEnvironmentMatches {
         @()
     }
     foreach ($requirement in $additionalRequirements) {
-        if ($requirement -match '^torchvision(?:\[[^\]]+\])?==(.+)$' -and $InstalledVersions.torchvision -ne $Matches[1]) {
+        if ($requirement -match '^torchvision(?:\[[^\]]+\])?==(.+)$' -and
+            ($InstalledVersions.PSObject.Properties.Name -notcontains 'torchvision' -or
+                $InstalledVersions.torchvision -ne $Matches[1])) {
             return $false
         }
-        if ($requirement -match '^torchaudio==(.+)$' -and $InstalledVersions.torchaudio -ne $Matches[1]) {
+        if ($requirement -match '^torchaudio==(.+)$' -and
+            ($InstalledVersions.PSObject.Properties.Name -notcontains 'torchaudio' -or
+                $InstalledVersions.torchaudio -ne $Matches[1])) {
             return $false
         }
     }
@@ -1523,7 +1532,13 @@ print(json.dumps({
     "torchaudio": versions["torchaudio"],
 }, sort_keys=True))
 '@
-    $result = Invoke-DevConfigNativeCommand -FilePath $PythonPath -Arguments @('-c', $script)
+    $temporary = Join-Path ([IO.Path]::GetTempPath()) "devconfig-python-versions-$([guid]::NewGuid().ToString('N')).py"
+    try {
+        [IO.File]::WriteAllText($temporary, $script, [Text.UTF8Encoding]::new($false))
+        $result = Invoke-DevConfigNativeCommand -FilePath $PythonPath -Arguments @($temporary)
+    } finally {
+        Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+    }
     $json = @($result.Output -split '\r?\n' | Where-Object { $_ }) | Select-Object -Last 1
     if ($result.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($json)) {
         return $null
