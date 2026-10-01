@@ -199,6 +199,7 @@ $rocmVersionsMissingVision = [pscustomobject]@{
 Assert-Equal (Get-PyTorchPackageAction -DesiredStateJson $rocmState -CurrentStateJson $rocmState -InstalledVersions $rocmVersionsMissingVision) 'Install' 'ROCm rerun should repair missing additional packages'
 
 $installScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Workloads\pytorch\install.ps1') -Raw
+$supportScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Workloads\_common\ai-support.ps1') -Raw
 Assert-True ($installScript -match 'Get-PipInstallArguments -Requirement \$plan\.NumpyRequirement') 'PyTorch environment should include pinned NumPy'
 Assert-True ($installScript -like "*if (`$packageAction -eq 'VerifyOnly')*") 'PyTorch should branch around package work on a matching rerun'
 Assert-True ($installScript -match 'Install-VerifiedDownload') 'Fresh direct-wheel install should use the verified download cache'
@@ -213,6 +214,7 @@ Assert-True ($probeScript -match 'DeviceIndex') 'PyTorch probe should reuse the 
 Assert-True ($installScript -match 'deviceIndex = \$DeviceIndex') 'PyTorch should persist the selected adapter independently of the optional report path'
 Assert-True ($probeScript -match '\$state\.deviceIndex') 'PyTorch probe should read the durable selected adapter state'
 Assert-True ($installScript -match 'Get-Python313Path') 'PyTorch should select the installed Python 3.13 explicitly'
+Assert-True ($supportScript -match 'print\(sys\.version_info\.major,sys\.version_info\.minor,sep=chr\(46\)\)') 'Python version probing should survive Windows PowerShell 5.1 native argument quoting'
 Assert-True ($installScript -match 'Import-MsvcEnvironment') 'Triton path should import the architecture-native MSVC build environment'
 Assert-True ((Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Workloads\_common\ai-support.ps1') -Raw) -like '*PATH=$vsInstaller;%PATH%*') 'Triton compiler environment should put vswhere.exe on PATH before VsDevCmd runs'
 Assert-True ($installScript -match 'Ensure-AiVisualCppTools') 'Triton should acquire its JIT compiler through direct shared setup'

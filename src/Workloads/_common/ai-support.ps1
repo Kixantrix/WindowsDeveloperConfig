@@ -1607,7 +1607,7 @@ function Get-Python313Path {
     }
     foreach ($candidate in $candidates | Select-Object -Unique) {
         $versionResult = Invoke-DevConfigNativeCommand -FilePath $candidate -Arguments @(
-            '-c', 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'
+            '-c', 'import sys; print(sys.version_info.major,sys.version_info.minor,sep=chr(46))'
         )
         $version = [string](@($versionResult.Output -split '\r?\n' | Where-Object { $_ }) | Select-Object -First 1)
         if ($versionResult.ExitCode -eq 0 -and $version.Trim() -eq '3.13') {
