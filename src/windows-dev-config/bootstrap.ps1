@@ -437,9 +437,10 @@ function Invoke-CalmOsBootstrap {
                 Write-Host "Run when ready: & '$escapedShell' $($scenarioArguments -join ' ')" -ForegroundColor Cyan
                 return
             }
-            $proc = Start-Process -FilePath $shell -ArgumentList $scenarioArguments -Wait -PassThru -NoNewWindow
-            if ($proc.ExitCode -ne 0) {
-                throw "Local AI scenario finished with exit code $($proc.ExitCode)."
+            & $shell @scenarioArguments
+            $scenarioExitCode = $LASTEXITCODE
+            if ($scenarioExitCode -ne 0) {
+                throw "Local AI scenario finished with exit code $scenarioExitCode."
             }
             return
         }
