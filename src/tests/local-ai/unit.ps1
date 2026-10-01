@@ -58,6 +58,7 @@ Assert-True ($bootstrap -match 'Assert-DevConfigProtectedTree -Directory \$workl
 Assert-True ($bootstrap -match 'Copy-Item -LiteralPath \$workloadsDir') 'Bootstrap should copy the complete multi-file Workloads dependency tree'
 Assert-True ($bootstrap -match 'Join-Path \$setupDir ''steps''') 'Bootstrap should copy the shared Windows Dev Config helper steps'
 Assert-True ($bootstrap -match '& \$shell @scenarioArguments') 'Bootstrap should wait for the scenario shell without waiting on persistent runtime descendants'
+Assert-True ($bootstrap -match '\$proc\.WaitForExit\(\)') 'UAC handoff should wait for only the elevated launcher process'
 Assert-True ($bootstrap -match '-AiBackend.*-AiRuntime') 'Bootstrap elevation should forward scenario selection'
 Assert-True ($bootstrap -match '-PlanOnly:\$PlanOnly') 'Bootstrap elevation should forward non-mutating plan mode'
 Assert-True ($bootstrap -match "AI backend/runtime/report options require -Scenario local-ai") 'Bootstrap should reject scenario-only options without the dispatcher'

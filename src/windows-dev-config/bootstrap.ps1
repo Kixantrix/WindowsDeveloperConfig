@@ -274,7 +274,8 @@ function Invoke-CalmOsBootstrap {
             -RequireTriton:$RequireTriton -PlanOnly:$PlanOnly -ReportRoot $ReportRoot `
             -ElevationErrorPath $elevationErrorPath
         Write-Host 'Setup needs Administrator rights (a UAC prompt will appear)...' -ForegroundColor Yellow
-        $proc = Start-Process -FilePath $shell -ArgumentList ($arguments + @('-Command', $command)) -Verb RunAs -Wait -PassThru
+        $proc = Start-Process -FilePath $shell -ArgumentList ($arguments + @('-Command', $command)) -Verb RunAs -PassThru
+        $proc.WaitForExit()
         if ($proc.ExitCode -ne 0) {
             $detail = if (Test-Path -LiteralPath $elevationErrorPath) {
                 (Get-Content -LiteralPath $elevationErrorPath -Raw).Trim()
