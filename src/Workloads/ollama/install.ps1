@@ -337,6 +337,8 @@ try {
 
 if ($architecture -eq 'Arm64') {
     $defaultApi = 'http://127.0.0.1:11434'
+    $persistentStdout = $null
+    $persistentStderr = $null
     try {
         $existingDefault = Invoke-RestMethod -Uri "$defaultApi/api/version" -TimeoutSec 3
         $managedDefault = @(Get-OllamaManagedProcesses -InstallRoot $paths.InstallRoot)
@@ -350,7 +352,16 @@ if ($architecture -eq 'Arm64') {
         $oldHost = $env:OLLAMA_HOST
         try {
             $env:OLLAMA_HOST = '127.0.0.1:11434'
-            $persistentProcess = Start-Process -FilePath $ollamaPath -ArgumentList 'serve' -WindowStyle Hidden -PassThru
+            $persistentStdout = Join-Path $paths.InstallRoot 'server.stdout.log'
+            $persistentStderr = Join-Path $paths.InstallRoot 'server.stderr.log'
+            Remove-Item $persistentStdout, $persistentStderr -Force -ErrorAction SilentlyContinue
+            $persistentProcess = Start-Process `
+                -FilePath $ollamaPath `
+                -ArgumentList 'serve' `
+                -WindowStyle Hidden `
+                -RedirectStandardOutput $persistentStdout `
+                -RedirectStandardError $persistentStderr `
+                -PassThru
             $persistentVersion = Wait-JsonEndpoint -Uri ([uri]"$defaultApi/api/version") -TimeoutSeconds 30
         } finally {
             $env:OLLAMA_HOST = $oldHost
@@ -367,6 +378,8 @@ if ($architecture -eq 'Arm64') {
         persistentProcessId = Get-AiProcessId -ProcessObject $persistentProcess
         version = $persistentVersion.version
         modelsPath = $modelRoot
+        stdoutLog = $(if ($persistentStdout) { $persistentStdout } else { $null })
+        stderrLog = $(if ($persistentStderr) { $persistentStderr } else { $null })
     }
 }
 

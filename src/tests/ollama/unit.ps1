@@ -65,6 +65,8 @@ Assert-True ($installScript -match 'Write-DevConfigTextFile -Path \$paths\.Insta
 Assert-True ($installScript -match 'Set-OllamaStartupRegistration') 'Ollama ARM64 should register current-user startup'
 Assert-True ($installScript -match 'Get-AiPeArchitecture') 'Ollama ARM64 should prove native executable architecture'
 Assert-True ($installScript -match 'persistentEndpoint') 'Ollama ARM64 should report the installed persistent endpoint'
+Assert-True ($installScript -match 'RedirectStandardOutput \$persistentStdout') 'Persistent Ollama should not inherit the setup output pipe'
+Assert-True ($installScript -match 'RedirectStandardError \$persistentStderr') 'Persistent Ollama errors should be retained in the managed install directory'
 Assert-True ($installScript -match "source = 'official native ARM64 archive'") 'Managed install manifest should record its authoritative source'
 Assert-True ($installScript -match 'installedFiles = @\(') 'Managed install manifest should record installed files'
 Assert-True ($installScript -match 'Remove-UserPathEntry -Path \$paths\.LegacyRoot') 'Managed upgrade should remove the obsolete runtime path'
