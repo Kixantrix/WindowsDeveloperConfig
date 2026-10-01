@@ -205,7 +205,12 @@ function Invoke-CalmOsBootstrap {
             }
             if ($AllowUnsigned) { $arguments += '-AllowUnsigned' }
             if ($NoLaunch) { $arguments += '-NoLaunch' }
-            $bootstrapOutput = (& (Join-Path $PSHOME $shellName) @arguments 2>&1 | Out-String).Trim()
+            if ($Scenario) {
+                & (Join-Path $PSHOME $shellName) @arguments
+                $bootstrapOutput = ''
+            } else {
+                $bootstrapOutput = (& (Join-Path $PSHOME $shellName) @arguments 2>&1 | Out-String).Trim()
+            }
             $bootstrapExitCode = $LASTEXITCODE
             if ($bootstrapOutput) { Write-Host $bootstrapOutput }
             if ($bootstrapExitCode -ne 0) {
