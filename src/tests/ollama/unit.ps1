@@ -100,9 +100,13 @@ $bytes[128] = 0x50; $bytes[129] = 0x45
 Compress-Archive -Path (Join-Path $payload '*') -DestinationPath $fixtureArchive
 $script:fakeOllamaDigest = (Get-FileHash -LiteralPath $fixtureArchive -Algorithm SHA256).Hash.ToLowerInvariant()
 $script:ollamaDownloadCount = 0
+$script:ollamaApiUnavailable = $false
 function Invoke-RestMethod {
+    if ($script:ollamaApiUnavailable) {
+        throw 'API rate limit exceeded'
+    }
     return [pscustomobject]@{
-        tag_name = 'v99.0.0'
+        tag_name = 'v0.35.0'
         draft = $false
         prerelease = $false
         assets = @([pscustomobject]@{
@@ -118,6 +122,11 @@ function Invoke-WebRequest {
     Copy-Item -LiteralPath $script:fixtureArchive -Destination $OutFile
 }
 try {
+    New-Item -ItemType Directory -Path $destination -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $destination 'ollama.exe') -Value 'stale-runtime'
+    Set-Content -LiteralPath (Join-Path $destination '.devconfig-version') `
+        -Value "v0.34.4|ollama-windows-arm64.zip|sha256:$('0' * 64)" `
+        -Encoding ascii
     $firstInstall = Install-VerifiedGitHubLatestAsset `
         -Repository 'ollama/ollama' `
         -AssetPattern '^ollama-windows-arm64\.zip$' `
@@ -126,6 +135,7 @@ try {
         -RequiredFile 'ollama.exe' `
         -CacheDirectory $cache
     Assert-Equal $firstInstall.Action 'installed-or-upgraded' 'First managed archive application should install atomically'
+    Assert-Equal $firstInstall.Tag 'v0.35.0' 'A stale 0.34.4 marker should resolve and install the current 0.35.0 release'
     Assert-Equal (Get-AiPeArchitecture -Path (Join-Path $destination 'ollama.exe')) 'Arm64' 'Installed official archive fixture should remain native ARM64'
     $secondInstall = Install-VerifiedGitHubLatestAsset `
         -Repository 'ollama/ollama' `
@@ -137,7 +147,19 @@ try {
     Assert-Equal $secondInstall.Action 'already-current' 'Matching managed archive installation should skip atomic replacement'
     Assert-Equal $script:ollamaDownloadCount 1 'Verified archive cache should prevent repeat download'
     Assert-True (Test-Path -LiteralPath $firstInstall.CachePath) 'Managed acquisition should report its verified archive cache'
+    $script:ollamaApiUnavailable = $true
+    $offlineInstall = Install-VerifiedGitHubLatestAsset `
+        -Repository 'ollama/ollama' `
+        -AssetPattern '^ollama-windows-arm64\.zip$' `
+        -Destination $destination `
+        -VersionMarker '.devconfig-version' `
+        -RequiredFile 'ollama.exe' `
+        -CacheDirectory $cache
+    Assert-Equal $offlineInstall.Action 'already-current' 'Rate-limited rerun should retain the digest-verified current runtime'
+    Assert-Equal $offlineInstall.Resolution 'verified-cache-fallback' 'Offline current-state proof should be explicit'
+    Assert-True ($offlineInstall.Warning -match 'rate limit') 'Offline current-state proof should report why latest resolution was unavailable'
 } finally {
+    $script:ollamaApiUnavailable = $false
     Remove-Item -LiteralPath $assetRoot -Recurse -Force
 }
 

@@ -459,7 +459,7 @@ Current real-hardware coverage:
 
 | Host | Validated workloads |
 | --- | --- |
-| Windows 11 ARM64 build 28120, NVIDIA RTX Spark N1X, driver 616.62 | CUDA 13.4 kernel; PyTorch cu134 tensor + neural forward; Triton vector-add; Foundry qwen3-0.6b inference; llama.cpp CUDA inference; optional Qwen2.5-Coder-1.5B `group_anagrams` generation at 101.7 t/s; managed native Ollama 0.34.4 install/rerun/uninstall-preserve/reinstall with verified release + qwen3:0.6b digests, persistent endpoint, native PE evidence, and `/api/ps` at 100% GPU |
+| Windows 11 ARM64 build 28120, NVIDIA RTX Spark N1X, driver 616.62 | CUDA 13.4 kernel; PyTorch cu134 tensor + neural forward; Triton vector-add; Foundry qwen3-0.6b inference; llama.cpp CUDA inference; optional Qwen2.5-Coder-1.5B `group_anagrams` generation at 101.7 t/s; managed native Ollama 0.34.4→0.35.0 upgrade/rerun/uninstall-preserve/reinstall with release SHA-256 `99d061915a68fb563da0fb9316fd112cfc6fce0c9478601b2765b1f973cb715e`, verified qwen3:0.6b digest, persistent endpoint, native PE evidence, and `/api/ps` at 100% GPU |
 | Supported Windows x64 NVIDIA GPU | Partner run pending: llama.cpp CUDA 13.3/12.4 benchmark and inference |
 | Supported Windows x64 AMD GPU | Partner run pending: ROCm/HIP kernel, PyTorch ROCm tensor, and llama.cpp ROCm benchmark/inference |
 | Supported Windows x64 Intel GPU/NPU | Partner run pending: OpenVINO selected-device inference, optional SYCL kernel, PyTorch XPU/torch.compile, and llama.cpp SYCL/OpenVINO benchmark/inference |

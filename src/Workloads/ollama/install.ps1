@@ -163,6 +163,9 @@ if ($architecture -eq 'X64') {
             InstallManifest = $paths.InstallManifest
             stoppedManagedProcesses = @($managedProcessIds | Select-Object -Unique)
         }
+        if ($resolved.PSObject.Properties['Warning']) {
+            [void]$report.result.warnings.Add([string]$resolved.Warning)
+        }
     }
 }
 

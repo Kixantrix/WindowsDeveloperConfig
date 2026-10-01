@@ -18,7 +18,7 @@ $Script:DevConfigWorkloadContentHashes = @{
     'typescript\configuration.winget' = '826e1755d85798e376baa00a9891c58fd2dd6da67d0f54486ad957202ee7c8b1'
     'winappcli\configuration.winget' = 'd61b53240fbdef910ea7a92250add1793ae599f57217c83052bd6aed490ead4c'
     'winforms\configuration.winget' = '39de8aee958e1e4989fd5b484a45a36537a7f8cb72dc966fa3afa4d0e8b9e34f'
-    'winui\configuration.winget' = '0c39e677f5e44b90eb51cc19e529aed8251d90d59f6fbea9ee58bcbb3d5a11f2'
+    'winui\configuration.winget' = '17024d9ef9aa2a7c9f33de7da195ff687c6a6176697682181a7378cfcf2e6098'
 }
 
 function Get-DevConfigCanonicalWorkloadHash {

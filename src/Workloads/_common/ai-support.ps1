@@ -2368,7 +2368,37 @@ function Install-VerifiedGitHubLatestAsset {
     if ($env:GITHUB_TOKEN) {
         $headers.Authorization = ('{0} {1}' -f 'Bearer', $env:GITHUB_TOKEN)
     }
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers $headers
+    $markerPath = Join-Path $Destination $VersionMarker
+    try {
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers $headers
+    } catch {
+        if ((Test-Path -LiteralPath $markerPath) -and
+            (Test-Path -LiteralPath (Join-Path $Destination $RequiredFile)) -and
+            $CacheDirectory) {
+            $selectionParts = @((Get-Content -LiteralPath $markerPath -Raw).Trim() -split '\|', 3)
+            if ($selectionParts.Count -eq 3 -and
+                $selectionParts[1] -match $AssetPattern -and
+                $selectionParts[2] -match '^sha256:([0-9a-fA-F]{64})$') {
+                $cachedAsset = Join-Path (Join-Path $CacheDirectory $selectionParts[0]) $selectionParts[1]
+                if ((Test-Path -LiteralPath $cachedAsset) -and
+                    (Get-FileHash -LiteralPath $cachedAsset -Algorithm SHA256).Hash -eq $Matches[1]) {
+                    return [pscustomobject]@{
+                        Tag = $selectionParts[0]
+                        Asset = [pscustomobject]@{
+                            name = $selectionParts[1]
+                            digest = $selectionParts[2]
+                            browser_download_url = $null
+                        }
+                        Action = 'already-current'
+                        CachePath = $cachedAsset
+                        Resolution = 'verified-cache-fallback'
+                        Warning = "GitHub latest-release resolution was unavailable; retained the installed release after verifying its cached archive digest. $($_.Exception.Message)"
+                    }
+                }
+            }
+        }
+        throw
+    }
     if ($release.draft -or $release.prerelease) {
         throw "The latest $Repository release '$($release.tag_name)' is not stable."
     }
@@ -2381,7 +2411,6 @@ function Install-VerifiedGitHubLatestAsset {
         throw "GitHub did not publish a SHA-256 digest for '$($asset.name)'."
     }
     $selection = "$($release.tag_name)|$($asset.name)|$($asset.digest)"
-    $markerPath = Join-Path $Destination $VersionMarker
     if ((Test-Path -LiteralPath $markerPath) -and
         (Test-Path -LiteralPath (Join-Path $Destination $RequiredFile)) -and
         ((Get-Content -LiteralPath $markerPath -Raw).Trim() -eq $selection)) {

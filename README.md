@@ -442,13 +442,14 @@ kernel acceptance tests.
 
 **Hardware validation status:** Windows ARM64 on NVIDIA RTX Spark N1X is
 validated end-to-end for CUDA, PyTorch CUDA, Triton, Foundry Local, llama.cpp,
-and Ollama. The managed Ollama ARM64 acceptance installed native runtime
-0.34.4 under `%LOCALAPPDATA%\Programs\Ollama`, migrated the prior Dev Config
-runtime, registered PATH/startup, verified the official release digest and
-`qwen3:0.6b` model digest, performed real inference at `/api/ps` 100% GPU, and
-left the persistent endpoint ready on `127.0.0.1:11434`. An idempotent rerun
-reported `already-current`; model-preserving uninstall and reinstall also
-passed. The optional Qwen2.5-Coder-1.5B demo generated the requested
+and Ollama. The managed Ollama ARM64 acceptance upgraded native runtime 0.34.4
+to 0.35.0 under `%LOCALAPPDATA%\Programs\Ollama`, registered PATH/startup,
+verified release SHA-256
+`99d061915a68fb563da0fb9316fd112cfc6fce0c9478601b2765b1f973cb715e`
+and the `qwen3:0.6b` model digest, performed real inference at `/api/ps` 100%
+GPU, and left the persistent endpoint ready on `127.0.0.1:11434`. An
+idempotent rerun reported `already-current`; model-preserving uninstall and
+reinstall also passed. The optional Qwen2.5-Coder-1.5B demo generated the requested
 `group_anagrams` Python implementation through llama.cpp CUDA at 101.7
 generation tokens/s. AMD ROCm/HIP, Intel OpenVINO/oneAPI/XPU, NVIDIA x64
 llama.cpp CUDA, and Qualcomm ARM64 llama.cpp OpenCL are hardware-gated and
