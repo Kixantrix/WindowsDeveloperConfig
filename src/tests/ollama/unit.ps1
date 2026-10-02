@@ -4,6 +4,35 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot '..\_harness\assertions.ps1')
 . (Join-Path $PSScriptRoot '..\..\Workloads\_common\ai-support.ps1')
 
+foreach ($endpoint in @(
+    @{ HostValue = $null; Expected = 'http://127.0.0.1:11434' }
+    @{ HostValue = ''; Expected = 'http://127.0.0.1:11434' }
+    @{ HostValue = 'localhost'; Expected = 'http://localhost:11434' }
+    @{ HostValue = '127.0.0.1:12345'; Expected = 'http://127.0.0.1:12345' }
+    @{ HostValue = 'localhost:80'; Expected = 'http://localhost' }
+    @{ HostValue = 'http://localhost'; Expected = 'http://localhost' }
+    @{ HostValue = 'https://localhost'; Expected = 'https://localhost' }
+    @{ HostValue = 'https://localhost:12345/'; Expected = 'https://localhost:12345' }
+    @{ HostValue = '  "localhost:12345"  '; Expected = 'http://localhost:12345' }
+    @{ HostValue = '127.0.0.2:12345'; Expected = 'http://127.0.0.2:12345' }
+    @{ HostValue = '0.0.0.0:12345'; Expected = 'http://127.0.0.1:12345' }
+    @{ HostValue = 'http://0.0.0.0:12345'; Expected = 'http://127.0.0.1:12345' }
+    @{ HostValue = '::1'; Expected = 'http://[::1]:11434' }
+    @{ HostValue = '[::1]'; Expected = 'http://[::1]:11434' }
+    @{ HostValue = '[::1]:12345'; Expected = 'http://[::1]:12345' }
+    @{ HostValue = '[::]:12345'; Expected = 'http://[::1]:12345' }
+)) {
+    Assert-Equal ([uri](Get-OllamaLocalEndpoint -HostValue $endpoint.HostValue)) ([uri]$endpoint.Expected) 'Ollama endpoint should preserve local configuration and use connectable addresses'
+}
+foreach ($hostValue in @('remote.example.invalid:12345', 'http://192.0.2.1:11434', 'https://[2001:db8::1]:12345')) {
+    Assert-ThrowsLike { Get-OllamaLocalEndpoint -HostValue $hostValue } '*loopback address*' 'Remote Ollama servers should be rejected'
+}
+foreach ($hostValue in @('localhost:0', 'localhost:65536', 'localhost:invalid', 'ftp://localhost:12345',
+        'http://user:password@localhost:12345', 'http://localhost:12345/prefix',
+        'http://localhost:12345/?query=value', 'http://localhost:12345/#fragment')) {
+    Assert-ThrowsLike { Get-OllamaLocalEndpoint -HostValue $hostValue } '*OLLAMA_HOST must be*' 'Invalid Ollama endpoint settings should fail explicitly'
+}
+
 $x64 = Resolve-OllamaInstallPlan -Architecture X64
 Assert-Equal $x64.PackageId 'Ollama.Ollama' 'Ollama x64 should use the current desktop package'
 Assert-Equal $x64.LaunchMode 'Desktop' 'Ollama x64 should use desktop background behavior'
@@ -48,6 +77,16 @@ Assert-Equal $request.options.seed 42 'Ollama inference should use a fixed seed'
 $manifestPath = Get-OllamaModelManifestPath -ModelRoot 'C:\models' -Model 'qwen3:0.6b'
 Assert-Equal $manifestPath 'C:\models\manifests\registry.ollama.ai\library\qwen3\0.6b' 'Ollama digest verification should target the pulled tag manifest'
 $installScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Workloads\ollama\install.ps1') -Raw
+$installAst = [Management.Automation.Language.Parser]::ParseInput($installScript, [ref]$null, [ref]$null)
+$endpointPreflight = @($installAst.EndBlock.Statements | Where-Object {
+    $_ -is [Management.Automation.Language.TryStatementAst] -and $_.Body.Extent.Text.Contains('$configuredApi = Get-OllamaLocalEndpoint')
+})
+Assert-Equal $endpointPreflight.Count 1 'Endpoint preflight must run in the normal install path, not inside uninstall'
+Assert-True ($endpointPreflight[0].Extent.EndOffset -lt $installScript.IndexOf("`$acquisition = Ensure-AiWingetPackage")) 'Endpoint preflight must finish before acquisition'
+$uninstallBlock = @($installAst.EndBlock.Statements | Where-Object {
+    $_ -is [Management.Automation.Language.IfStatementAst] -and $_.Clauses[0].Item1.Extent.Text -eq '$Uninstall'
+})
+Assert-True ($uninstallBlock.Count -eq 1 -and $uninstallBlock[0].Extent.EndOffset -lt $endpointPreflight[0].Extent.StartOffset) 'Endpoint validation must not block uninstall'
 Assert-True ($installScript -match '\[switch\]\s*\$SkipModelSmoke') 'Ollama should expose model-smoke opt-out'
 Assert-True ($installScript -match '\[switch\]\s*\$PlanOnly') 'Ollama should expose non-mutating plan mode'
 Assert-True ($installScript -match '\[switch\]\s*\$Uninstall') 'Ollama should expose managed uninstall'
@@ -82,6 +121,15 @@ Assert-Equal ((Get-AiProcessIds -ProcessObjects @($currentProcess, $alternatePro
 Assert-True ($installScript -match 'Get-AiProcessId') 'Ollama cleanup should use guarded process id extraction'
 Assert-True ($installScript -match 'Get-AiFreeTcpPort') 'Ollama ARM64 should allocate a resolver-owned API endpoint'
 Assert-True ($installScript -match '\$env:OLLAMA_HOST') 'Ollama ARM64 CLI and server should use the owned endpoint'
+Assert-True ($installScript -match '\$configuredApi = Get-OllamaLocalEndpoint') 'Ollama should validate the configured endpoint before acquisition'
+Assert-True ($installScript -match '\$apiBase = \$configuredApi') 'Ollama x64 HTTP checks should use the configured endpoint'
+Assert-True ($installScript -match '\$env:OLLAMA_HOST = \$apiBase') 'Ollama CLI checks should use the same connectable endpoint as HTTP'
+Assert-True ($installScript -match '\$persistentApi = \$configuredApi') 'Managed Ollama startup should honor the configured endpoint'
+Assert-True ($installScript -match '\$env:OLLAMA_HOST = \$oldHost') 'Ollama validation should restore the caller environment'
+$probeScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'probe.ps1') -Raw
+Assert-True ($probeScript -match 'Get-OllamaLocalEndpoint') 'Ollama verification should share endpoint resolution'
+Assert-True ($probeScript -match '\$env:OLLAMA_HOST = \$apiBase') 'Ollama probe CLI and HTTP calls should agree'
+Assert-True ($probeScript -match '\$env:OLLAMA_HOST = \$oldHost') 'Ollama probe should restore the caller environment'
 Assert-True ($installScript -match 'expectedVersion') 'Ollama ARM64 should verify the managed server matches the acquired release'
 $freePort = Get-AiFreeTcpPort
 Assert-True ($freePort -gt 0 -and $freePort -le 65535) 'Free TCP port helper should return a usable loopback port'

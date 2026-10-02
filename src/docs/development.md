@@ -375,6 +375,11 @@ preserving `%USERPROFILE%\.ollama\models`; add `-RemoveModels` for explicit
 model deletion. The x64 setup executable is never run under emulation and the
 portable WinGet identity is never selected.
 
+Ollama setup and verification honor loopback `OLLAMA_HOST` addresses and ports,
+defaulting to `127.0.0.1:11434`. Wildcard bind addresses are checked through loopback.
+Remote servers and path-prefixed URLs are rejected because validation targets the
+local runtime and model files. Validation restores the caller's environment.
+
 This is not a general Python package manager or a request to install every AI
 SDK. Native `cuda`, `rocm`, and `intel-ai` remain independent developer-toolkit
 flows. Foundry, llama.cpp, and Ollama are optional model-runtime choices.

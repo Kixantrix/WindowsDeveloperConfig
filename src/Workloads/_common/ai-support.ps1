@@ -850,6 +850,42 @@ function Get-AiPeArchitecture {
     }
 }
 
+function Get-OllamaLocalEndpoint {
+    [CmdletBinding()]
+    param([AllowNull()] [AllowEmptyString()] [string] $HostValue = $env:OLLAMA_HOST)
+
+    $value = ([string]$HostValue).Trim().Trim([char[]]@('"', "'")).Trim()
+    if (-not $value) { $value = '127.0.0.1:11434' }
+    if ($value -cnotmatch '^https?://') {
+        $authority = ($value -split '/', 2)[0]
+        $suffix = $value.Substring($authority.Length)
+        $address = $null
+        if ([Net.IPAddress]::TryParse($authority.Trim([char[]]'[]'), [ref]$address) -and
+            $address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetworkV6) {
+            $authority = "[$address]:11434"
+        } elseif ($authority -notmatch ':\d+$') {
+            $authority += ':11434'
+        }
+        $value = "http://$authority$suffix"
+    }
+    $uri = $null
+    if (-not [uri]::TryCreate($value, [UriKind]::Absolute, [ref]$uri) -or
+        $uri.Scheme -notin @('http', 'https') -or $uri.Port -lt 1 -or
+        $uri.UserInfo -or $uri.Query -or $uri.Fragment -or $uri.AbsolutePath -ne '/') {
+        throw 'OLLAMA_HOST must be a local host/port or root HTTP(S) URL without credentials, a path, query, or fragment.'
+    }
+    $endpoint = [UriBuilder]::new($uri)
+    $bindAddress = $null
+    if ([Net.IPAddress]::TryParse($uri.DnsSafeHost, [ref]$bindAddress)) {
+        if ($bindAddress.Equals([Net.IPAddress]::Any)) { $endpoint.Host = '127.0.0.1' }
+        if ($bindAddress.Equals([Net.IPAddress]::IPv6Any)) { $endpoint.Host = '::1' }
+    }
+    if (-not $endpoint.Uri.IsLoopback) {
+        throw 'OLLAMA_HOST must use a loopback address; remote servers cannot be verified against local model files.'
+    }
+    return $endpoint.Uri.AbsoluteUri.TrimEnd('/')
+}
+
 function Get-OllamaManagedPaths {
     [CmdletBinding()]
     param([string] $LocalAppData = $env:LOCALAPPDATA)

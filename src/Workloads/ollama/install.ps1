@@ -89,6 +89,17 @@ if ($Uninstall) {
     return
 }
 
+try {
+    $configuredApi = Get-OllamaLocalEndpoint
+} catch {
+    if (-not $PlanOnly) { throw }
+    [void]$report.result.blockers.Add($_.Exception.Message)
+    Complete-AiWorkloadReport -Report $report -Ready $false -Path $ReportPath
+    Write-Host 'PLAN_UNSUPPORTED: ollama'
+    return
+}
+$report.request.Endpoint = $configuredApi
+
 if ($architecture -eq 'X64') {
     if (-not $PlanOnly) { Assert-AiAdministrator }
     $acquisition = Ensure-AiWingetPackage -Id 'Ollama.Ollama' -PlanOnly:$PlanOnly
@@ -207,7 +218,6 @@ if ($PlanOnly) {
     return
 }
 
-Invoke-CheckedCommand -FilePath $ollamaPath -ArgumentList @('--version') -DisplayName 'Ollama CLI verification'
 $oldHost = $env:OLLAMA_HOST
 $validationServer = $null
 $validationStdout = $null
@@ -234,7 +244,7 @@ try {
             throw "Managed ARM64 API reported version '$($version.version)', expected '$expectedVersion'."
         }
     } else {
-        $apiBase = 'http://localhost:11434'
+        $apiBase = $configuredApi
         try {
             $version = Invoke-RestMethod -Uri "$apiBase/api/version" -TimeoutSec 3
         } catch {
@@ -247,6 +257,8 @@ try {
     if (-not $version.version) {
         throw 'Ollama API responded without a version value.'
     }
+    $env:OLLAMA_HOST = $apiBase
+    Invoke-CheckedCommand -FilePath $ollamaPath -ArgumentList @('--version') -DisplayName 'Ollama CLI verification'
     if ($architecture -eq 'Arm64') {
         $report.acceptance.server = [ordered]@{
             validationEndpoint = $apiBase
@@ -336,36 +348,30 @@ try {
 }
 
 if ($architecture -eq 'Arm64') {
-    $defaultApi = 'http://127.0.0.1:11434'
+    $persistentApi = $configuredApi
     $persistentStdout = $null
     $persistentStderr = $null
     try {
-        $existingDefault = Invoke-RestMethod -Uri "$defaultApi/api/version" -TimeoutSec 3
+        $existingDefault = Invoke-RestMethod -Uri "$persistentApi/api/version" -TimeoutSec 3
         $managedDefault = @(Get-OllamaManagedProcesses -InstallRoot $paths.InstallRoot)
         if ($managedDefault.Count -eq 0) {
-            throw "Port 11434 is already served by an unmanaged Ollama instance. Stop it and rerun to activate the managed ARM64 installation."
+            throw "Endpoint $persistentApi is already served by an unmanaged Ollama instance. Stop it and rerun to activate the managed ARM64 installation."
         }
         $persistentVersion = $existingDefault
         $persistentProcess = $managedDefault | Select-Object -First 1
     } catch {
         if ($_.Exception.Message -match 'unmanaged Ollama') { throw }
-        $oldHost = $env:OLLAMA_HOST
-        try {
-            $env:OLLAMA_HOST = '127.0.0.1:11434'
-            $persistentStdout = Join-Path $paths.InstallRoot 'server.stdout.log'
-            $persistentStderr = Join-Path $paths.InstallRoot 'server.stderr.log'
-            Remove-Item $persistentStdout, $persistentStderr -Force -ErrorAction SilentlyContinue
-            $persistentProcess = Start-Process `
-                -FilePath $ollamaPath `
-                -ArgumentList 'serve' `
-                -WindowStyle Hidden `
-                -RedirectStandardOutput $persistentStdout `
-                -RedirectStandardError $persistentStderr `
-                -PassThru
-            $persistentVersion = Wait-JsonEndpoint -Uri ([uri]"$defaultApi/api/version") -TimeoutSeconds 30
-        } finally {
-            $env:OLLAMA_HOST = $oldHost
-        }
+        $persistentStdout = Join-Path $paths.InstallRoot 'server.stdout.log'
+        $persistentStderr = Join-Path $paths.InstallRoot 'server.stderr.log'
+        Remove-Item $persistentStdout, $persistentStderr -Force -ErrorAction SilentlyContinue
+        $persistentProcess = Start-Process `
+            -FilePath $ollamaPath `
+            -ArgumentList 'serve' `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $persistentStdout `
+            -RedirectStandardError $persistentStderr `
+            -PassThru
+        $persistentVersion = Wait-JsonEndpoint -Uri ([uri]"$persistentApi/api/version") -TimeoutSeconds 30
     }
     $report.acceptance.managedRuntime = [ordered]@{
         installType = $plan.InstallType
@@ -374,7 +380,7 @@ if ($architecture -eq 'Arm64') {
         executableArchitecture = Get-AiPeArchitecture -Path $ollamaPath
         startupRegistryPath = $paths.StartupRegistryPath
         startupValueName = $paths.StartupValueName
-        persistentEndpoint = $defaultApi
+        persistentEndpoint = $persistentApi
         persistentProcessId = Get-AiProcessId -ProcessObject $persistentProcess
         version = $persistentVersion.version
         modelsPath = $modelRoot
