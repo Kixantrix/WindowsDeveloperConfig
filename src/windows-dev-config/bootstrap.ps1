@@ -435,12 +435,15 @@ function Invoke-CalmOsBootstrap {
             Write-Host "  Scenario ready in $scenarioRoot" -ForegroundColor DarkGray
             $scenarioArguments = @('-NoProfile')
             if (-not $AllowUnsigned) { $scenarioArguments += '-ExecutionPolicy', 'RemoteSigned' }
-            $scenarioArguments += '-File', "`"$target`"", '-Backend', $AiBackend, '-Runtime', $AiRuntime
+            $scenarioArguments += '-File', $target, '-Backend', $AiBackend, '-Runtime', $AiRuntime
             if ($RequireTriton) { $scenarioArguments += '-RequireTriton' }
             if ($PlanOnly) { $scenarioArguments += '-PlanOnly' }
-            if ($ReportRoot) { $scenarioArguments += '-ReportRoot', "`"$ReportRoot`"" }
+            if ($ReportRoot) { $scenarioArguments += '-ReportRoot', $ReportRoot }
             if ($NoLaunch) {
-                Write-Host "Run when ready: & '$escapedShell' $($scenarioArguments -join ' ')" -ForegroundColor Cyan
+                $displayArguments = $scenarioArguments | ForEach-Object {
+                    "'$([Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($_))'"
+                }
+                Write-Host "Run when ready: & '$escapedShell' $($displayArguments -join ' ')" -ForegroundColor Cyan
                 return
             }
             & $shell @scenarioArguments
