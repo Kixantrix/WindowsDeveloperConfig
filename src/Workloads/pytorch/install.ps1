@@ -355,6 +355,7 @@ if ($plan.Backend -ne 'CPU' -and $plan.DeviceName -and
     -not (Test-AiDeviceNameMatch -Expected $plan.DeviceName -Actual $tensorRecord.device)) {
     throw "PyTorch device index $DeviceIndex executed on '$($tensorRecord.device)', but the resolver selected '$($plan.DeviceName)'. Use the matching -DeviceIndex."
 }
+$tritonRecord = $null
 if ($plan.InstallTriton) {
     $tritonSmoke = if ($plan.Backend -eq 'XPU') { 'xpu-smoke.py' } else { 'triton-smoke.py' }
     $tritonResult = Invoke-DevConfigNativeCommand -FilePath $venvPython -Arguments @(
