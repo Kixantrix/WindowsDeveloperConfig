@@ -123,7 +123,6 @@ try {
     Assert-True ($_.Exception.Message -like '*No rolling*') 'Mocked empty release list should stop before download'
 } finally {
     Remove-Item Env:\GITHUB_TOKEN
-    $script:capturedAuthorization = [string]::Concat('Bea', 'rer ', 'devconfig-unit-test-token')
 }
 Assert-Equal $script:capturedAuthorization 'Bearer devconfig-unit-test-token' 'GitHub token should authenticate release metadata requests'
 
