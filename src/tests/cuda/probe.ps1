@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot '..\..\Workloads\_common\ai-support.ps1')
+. (Join-Path $PSScriptRoot '..\..\Workloads\_common\ai-report.ps1')
 
 $architecture = Get-DevConfigArchitecture
 $plan = Resolve-CudaInstallPlan -Architecture $architecture -WindowsBuild (Get-WindowsBuildNumber)
