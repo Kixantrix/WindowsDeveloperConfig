@@ -172,13 +172,31 @@ if ($missingReleaseFlows.Count -gt 0) {
         $shellName = [System.IO.Path]::GetFileNameWithoutExtension($shell)
         foreach ($flow in $flows) {
             $reportPath = Join-Path $env:TEMP "$shellName-$flow-all-signed.json"
-            $result = Invoke-AllSignedProcess `
-                -Shell $shell `
-                -Script (Join-Path $releaseRoot "$flow\install.ps1") `
-                -Arguments @('-PlanOnly', '-ReportPath', $reportPath) `
-                -PublisherConsentCount 64
-            if ($result.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $reportPath)) {
-                throw "$shellName AllSigned launch failed for signed $flow release: $($result.Output)"
+            $reportArguments = @('-PlanOnly', '-ReportPath', $reportPath)
+            $expectedReports = @($reportPath)
+            $scenarioReportRoot = $null
+            if ($flow -eq 'local-ai') {
+                $scenarioReportRoot = Join-Path $env:TEMP "$shellName-$flow-all-signed-$([guid]::NewGuid().ToString('N'))"
+                $reportArguments = @('-PlanOnly', '-ReportRoot', $scenarioReportRoot)
+                $expectedReports = @(
+                    (Join-Path $scenarioReportRoot 'hardware.json')
+                    (Join-Path $scenarioReportRoot 'pytorch.json')
+                )
+            }
+            try {
+                $result = Invoke-AllSignedProcess `
+                    -Shell $shell `
+                    -Script (Join-Path $releaseRoot "$flow\install.ps1") `
+                    -Arguments $reportArguments `
+                    -PublisherConsentCount 64
+                $missingReports = @($expectedReports | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
+                if ($result.ExitCode -ne 0 -or $missingReports.Count -gt 0) {
+                    throw "$shellName AllSigned launch failed for signed $flow release (missing reports: $($missingReports -join ', ')): $($result.Output)"
+                }
+            } finally {
+                if ($scenarioReportRoot -and (Test-Path -LiteralPath $scenarioReportRoot)) {
+                    Remove-Item -LiteralPath $scenarioReportRoot -Recurse -Force
+                }
             }
         }
     }
