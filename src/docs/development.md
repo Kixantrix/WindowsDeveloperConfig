@@ -493,6 +493,9 @@ CUDA setup and its verification probe require the kernel-reported index to match
 records the runtime-reported name. Name matching does not distinguish GPUs with
 identical model names.
 
+For `intel-ai`, `-Profile SYCL` accepts only `-Device Auto` or `GPU`. With `Full`,
+`-Device` selects the OpenVINO target; the SYCL kernel still requires an Intel GPU.
+
 Code path readiness before hardware testing:
 
 | Supported combination | Resolver | Acquisition | Workload probe | Report contract | Static/unit | Live hardware |

@@ -1115,6 +1115,9 @@ function Resolve-IntelAiPlan {
     } elseif ($Device -eq 'Auto') {
         if ($IntelNpuPresent) { 'NPU' } elseif ($IntelGpuPresent) { 'GPU' } else { 'CPU' }
     } else { $Device }
+    if ($Profile -eq 'SYCL' -and $selectedDevice -ne 'GPU') {
+        throw 'The SYCL-only profile supports -Device Auto or GPU. Use -Profile OpenVINO or Full for CPU/NPU inference.'
+    }
     if ($selectedDevice -eq 'GPU' -and -not $IntelGpuPresent) {
         throw 'Intel GPU was requested, but no Intel display adapter was detected.'
     }

@@ -16,6 +16,23 @@ Assert-True $gpuPlan.InstallOpenVino 'Full profile should install OpenVINO'
 Assert-True $gpuPlan.InstallOneApi 'Full profile should install oneAPI'
 $npuPlan = Resolve-IntelAiPlan -Architecture X64 -Device Auto -Profile OpenVINO -IntelGpuPresent $true -IntelNpuPresent $true
 Assert-Equal $npuPlan.Device 'NPU' 'Intel Auto should prefer an available NPU for OpenVINO'
+foreach ($allowedDevice in @('Auto', 'GPU')) {
+    $syclPlan = Resolve-IntelAiPlan -Architecture X64 -Device $allowedDevice -Profile SYCL -IntelGpuPresent $true -IntelNpuPresent $true
+    Assert-Equal $syclPlan.Device 'GPU' 'SYCL-only should select a GPU even when an NPU is present'
+    Assert-True $syclPlan.InstallOneApi 'SYCL-only should retain oneAPI acquisition'
+    Assert-True (-not $syclPlan.InstallOpenVino) 'SYCL-only should not acquire OpenVINO'
+}
+foreach ($nonGpuDevice in @('CPU', 'NPU')) {
+    Assert-ThrowsLike {
+        Resolve-IntelAiPlan -Architecture X64 -Device $nonGpuDevice -Profile SYCL -IntelGpuPresent $true -IntelNpuPresent $true
+    } '*SYCL-only profile supports -Device Auto or GPU*' 'SYCL-only should reject explicit CPU/NPU selections even when hardware is present'
+    foreach ($supportedProfile in @('OpenVINO', 'Full')) {
+        $plan = Resolve-IntelAiPlan -Architecture X64 -Device $nonGpuDevice -Profile $supportedProfile -IntelGpuPresent $true -IntelNpuPresent $true
+        Assert-Equal $plan.Device $nonGpuDevice 'OpenVINO and Full should preserve explicit CPU/NPU selection'
+        Assert-True $plan.InstallOpenVino 'OpenVINO and Full should retain OpenVINO acquisition'
+        Assert-Equal $plan.InstallOneApi ($supportedProfile -eq 'Full') 'Only Full should also acquire oneAPI for the SYCL GPU kernel'
+    }
+}
 Assert-ThrowsLike {
     Resolve-IntelAiPlan -Architecture Arm64 -Device Auto -Profile OpenVINO -IntelGpuPresent $false
 } '*do not publish native Windows ARM64*' 'Intel AI should reject Windows ARM64'
