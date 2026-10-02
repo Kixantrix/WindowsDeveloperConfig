@@ -488,6 +488,11 @@ system. Same-vendor targeting uses `-DeviceIndex` for CUDA/ROCm and explicit PyT
 and `-SyclDeviceSelector` for oneAPI. Foundry and Ollama are source-managed:
 they report the actual provider/allocation and do not imply a selector.
 
+CUDA setup and its verification probe require the kernel-reported index to match
+`-DeviceIndex` and the GPU name to match the `nvidia-smi` selection. The report
+records the runtime-reported name. Name matching does not distinguish GPUs with
+identical model names.
+
 Code path readiness before hardware testing:
 
 | Supported combination | Resolver | Acquisition | Workload probe | Report contract | Static/unit | Live hardware |

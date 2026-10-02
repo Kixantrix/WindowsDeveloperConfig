@@ -248,6 +248,7 @@ function Test-AiDeviceNameMatch {
     if (-not $Expected -or -not $Actual) { return $false }
     $normalizedExpected = ($Expected -replace '\((TM|R)\)', '' -replace '[^A-Za-z0-9]+', ' ').Trim()
     $normalizedActual = ($Actual -replace '\((TM|R)\)', '' -replace '[^A-Za-z0-9]+', ' ').Trim()
+    if (-not $normalizedExpected -or -not $normalizedActual) { return $false }
     return $normalizedActual -eq $normalizedExpected -or
         $normalizedActual.Contains($normalizedExpected) -or
         $normalizedExpected.Contains($normalizedActual)
@@ -1172,6 +1173,32 @@ function Get-NvidiaDriverInfo {
         DriverVersion = $driver
         DriverMajor = $driver.Major
         ComputeCapability = $compute
+    }
+}
+
+function Get-CudaKernelDeviceEvidence {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Output,
+        [Parameter(Mandatory)] [string] $ExpectedDeviceName,
+        [ValidateRange(0, 63)] [int] $DeviceIndex = 0
+    )
+
+    $deviceMatch = [regex]::Match($Output.Trim(), '^CUDA_KERNEL_READY device_index=([0-9]+) device=(.+)$')
+    if (-not $deviceMatch.Success) {
+        throw "CUDA kernel evidence did not contain the device index and name: $Output"
+    }
+    $actualDeviceIndex = 0
+    if (-not [int]::TryParse($deviceMatch.Groups[1].Value, [ref]$actualDeviceIndex) -or $actualDeviceIndex -ne $DeviceIndex) {
+        throw "CUDA kernel reported device index '$($deviceMatch.Groups[1].Value)' instead of requested index $DeviceIndex."
+    }
+    $actualDeviceName = $deviceMatch.Groups[2].Value.Trim()
+    if (-not (Test-AiDeviceNameMatch -Expected $ExpectedDeviceName -Actual $actualDeviceName)) {
+        throw "CUDA device index $DeviceIndex executed on '$actualDeviceName', but nvidia-smi qualified '$ExpectedDeviceName'. Check CUDA_VISIBLE_DEVICES and CUDA_DEVICE_ORDER."
+    }
+    return [pscustomobject]@{
+        DeviceIndex = $actualDeviceIndex
+        Name = $actualDeviceName
     }
 }
 

@@ -39,6 +39,49 @@ Assert-True ($compile -like '*-arch=arm64 -host_arch=arm64*') 'CUDA ARM64 smoke 
 Assert-True ($compile -like '*-arch=native*smoke.cu*') 'CUDA smoke should compile for the detected GPU'
 Assert-True ($compile -like '*Microsoft Visual Studio\Installer;%PATH%*') 'CUDA compiler environment should put vswhere.exe on PATH before VsDevCmd runs'
 
+$kernelDevice = Get-CudaKernelDeviceEvidence `
+    -Output 'CUDA_KERNEL_READY device_index=2 device=NVIDIA(R) GeForce RTX 4090' `
+    -ExpectedDeviceName 'NVIDIA GeForce RTX 4090' -DeviceIndex 2
+Assert-Equal $kernelDevice.DeviceIndex 2 'CUDA evidence should retain the runtime device index'
+Assert-True ($kernelDevice.DeviceIndex -is [int]) 'CUDA evidence should report a numeric device index'
+Assert-Equal $kernelDevice.Name 'NVIDIA(R) GeForce RTX 4090' 'CUDA evidence should retain the actual name while accepting normalized driver names'
+$lastDevice = Get-CudaKernelDeviceEvidence `
+    -Output 'CUDA_KERNEL_READY device_index=63 device=NVIDIA GeForce RTX 4090' `
+    -ExpectedDeviceName 'NVIDIA GeForce RTX 4090' -DeviceIndex 63
+Assert-Equal $lastDevice.DeviceIndex 63 'CUDA evidence should accept the highest supported device index'
+foreach ($wrongName in @('NVIDIA GeForce RTX 3090', '---', '(TM)')) {
+    Assert-ThrowsLike {
+        Get-CudaKernelDeviceEvidence `
+            -Output "CUDA_KERNEL_READY device_index=2 device=$wrongName" `
+            -ExpectedDeviceName 'NVIDIA GeForce RTX 4090' -DeviceIndex 2
+    } '*nvidia-smi qualified*CUDA_VISIBLE_DEVICES*' 'CUDA acceptance should reject a different or invalid GPU name despite a successful marker'
+}
+foreach ($invalidExpectedName in @('---', '(TM)')) {
+    Assert-ThrowsLike {
+        Get-CudaKernelDeviceEvidence `
+            -Output 'CUDA_KERNEL_READY device_index=2 device=NVIDIA GeForce RTX 4090' `
+            -ExpectedDeviceName $invalidExpectedName -DeviceIndex 2
+    } '*nvidia-smi qualified*' 'CUDA acceptance should reject an invalid qualified GPU name'
+}
+foreach ($wrongIndex in @('1', '99999999999999999999')) {
+    Assert-ThrowsLike {
+        Get-CudaKernelDeviceEvidence `
+            -Output "CUDA_KERNEL_READY device_index=$wrongIndex device=NVIDIA GeForce RTX 4090" `
+            -ExpectedDeviceName 'NVIDIA GeForce RTX 4090' -DeviceIndex 2
+    } '*instead of requested index 2*' 'CUDA acceptance should reject mismatched or invalid runtime indices'
+}
+foreach ($invalidEvidence in @(
+    ''
+    'CUDA_KERNEL_READY'
+    'CUDA_KERNEL_READY device_index=2 device=   '
+    'CUDA_KERNEL_READY device_index=invalid device=NVIDIA GeForce RTX 4090'
+    'OTHER_KERNEL_READY device_index=2 device=NVIDIA GeForce RTX 4090'
+)) {
+    Assert-ThrowsLike {
+        Get-CudaKernelDeviceEvidence -Output $invalidEvidence -ExpectedDeviceName 'NVIDIA GeForce RTX 4090' -DeviceIndex 2
+    } '*CUDA kernel evidence did not contain*' 'CUDA acceptance should require a complete device marker'
+}
+
 $installScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Workloads\cuda\install.ps1') -Raw
 Assert-True ($installScript -match '\[switch\]\s*\$SkipWorkloadSmoke') 'CUDA should expose workload-smoke opt-out'
 Assert-True ($installScript -match '\[int\]\s*\$DeviceIndex') 'CUDA should expose same-vendor adapter selection'

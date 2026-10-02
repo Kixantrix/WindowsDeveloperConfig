@@ -190,17 +190,18 @@ if ($SkipWorkloadSmoke -or -not $readiness.GpuReady) {
             throw "CUDA smoke kernel compilation failed with exit code $LASTEXITCODE."
         }
         $output = (& $executable $DeviceIndex 2>&1 | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0 -or $output -notmatch '^CUDA_KERNEL_READY') {
+        if ($LASTEXITCODE -ne 0) {
             throw "CUDA smoke kernel failed on the GPU (exit $LASTEXITCODE, output '$output')."
         }
+        $kernelDevice = Get-CudaKernelDeviceEvidence -Output $output -ExpectedDeviceName $driver.Name -DeviceIndex $DeviceIndex
         Write-Host 'CUDA_WORKLOAD_READY: compiled and executed a CUDA kernel on the detected GPU.'
         $kernelReady = $true
         $report.acceptance.kernel = [ordered]@{
             compiled = $true
             executed = $true
             marker = 'CUDA_KERNEL_READY'
-            deviceIndex = $DeviceIndex
-            device = $driver.Name
+            deviceIndex = $kernelDevice.DeviceIndex
+            device = $kernelDevice.Name
             computeCapability = $driver.ComputeCapability.ToString()
         }
     } finally {
