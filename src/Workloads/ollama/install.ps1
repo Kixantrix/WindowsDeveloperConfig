@@ -65,10 +65,18 @@ if ($Uninstall) {
 
     if ($architecture -eq 'X64') {
         Assert-AiAdministrator
-        Invoke-CheckedCommand -FilePath 'winget' -ArgumentList @(
-            'uninstall', '--id', 'Ollama.Ollama', '--exact', '--source', 'winget',
-            '--silent', '--disable-interactivity'
-        ) -DisplayName 'Ollama application uninstall'
+        $uninstallResult = Invoke-DevConfigCleanupCommand -FilePath 'winget' -Arguments @(
+            'uninstall', '--id', $component.PackageId, '--exact', '--source', 'winget',
+            '--silent', '--disable-interactivity', '--accept-source-agreements'
+        ) -SuccessCodes @(0, $Script:DevConfigWingetNotFound)
+        if ($uninstallResult.Output) { Write-Host $uninstallResult.Output.TrimEnd() }
+        $remaining = Invoke-DevConfigCleanupCommand -FilePath 'winget' -Arguments @(
+            'list', '--id', $component.PackageId, '--exact', '--source', 'winget',
+            '--disable-interactivity', '--accept-source-agreements'
+        ) -SuccessCodes @(0, $Script:DevConfigWingetNotFound)
+        if ($remaining.ExitCode -ne $Script:DevConfigWingetNotFound) {
+            throw "WinGet still lists $($component.PackageId) after uninstall."
+        }
     } else {
         $removed = Remove-OllamaManagedInstallation `
             -Paths $paths `

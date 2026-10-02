@@ -87,6 +87,56 @@ $uninstallBlock = @($installAst.EndBlock.Statements | Where-Object {
     $_ -is [Management.Automation.Language.IfStatementAst] -and $_.Clauses[0].Item1.Extent.Text -eq '$Uninstall'
 })
 Assert-True ($uninstallBlock.Count -eq 1 -and $uninstallBlock[0].Extent.EndOffset -lt $endpointPreflight[0].Extent.StartOffset) 'Endpoint validation must not block uninstall'
+$x64Uninstall = @($uninstallBlock[0].Clauses[0].Item2.Statements | Where-Object {
+    $_ -is [Management.Automation.Language.IfStatementAst] -and
+    $null -ne $_.ElseClause -and $_.ElseClause.Extent.Text.Contains('Remove-OllamaManagedInstallation')
+})
+Assert-Equal $x64Uninstall.Count 1 'Uninstall should retain separate desktop and managed-runtime paths'
+$x64UninstallCode = [scriptblock]::Create(($x64Uninstall[0].Clauses[0].Item2.Statements.Extent.Text -join "`n"))
+& {
+    . (Join-Path $PSScriptRoot '..\..\windows-dev-config\steps\_environment.ps1')
+    . (Join-Path $PSScriptRoot '..\..\windows-dev-config\steps\_winget.ps1')
+    $component = (Get-AiCatalogData).Components.OllamaX64
+    function Assert-AiAdministrator {}
+    function Initialize-DevConfigWinGet { throw 'Uninstall must not install the WinGet module.' }
+    function Get-Command {
+        [CmdletBinding()]
+        param($Name, $CommandType)
+        Assert-Equal $Name 'winget' 'Desktop cleanup should use the existing WinGet CLI'
+        Assert-Equal $CommandType 'Application' 'Desktop cleanup should resolve an executable'
+        return [pscustomobject]@{ Source = 'winget.exe' }
+    }
+    function Invoke-DevConfigNativeCommand {
+        param($FilePath, $Arguments, $TimeoutSeconds)
+        Assert-Equal $FilePath 'winget.exe' 'Desktop cleanup should invoke the resolved WinGet executable'
+        Assert-True ('Ollama.Ollama' -in $Arguments) 'Desktop cleanup should target the catalog package'
+        Assert-True ('--disable-interactivity' -in $Arguments) 'Desktop cleanup should remain noninteractive'
+        Assert-True ('--accept-source-agreements' -in $Arguments) 'Desktop cleanup should not prompt for source agreements'
+        $exitCode = $case.ExitCodes[$calls.Count]
+        $calls.Add($Arguments[0])
+        return [pscustomobject]@{ ExitCode = $exitCode; Output = '' }
+    }
+    foreach ($case in @(
+        @{ ExitCodes = @(0, $Script:DevConfigWingetNotFound); Error = $null }
+        @{ ExitCodes = @($Script:DevConfigWingetNotFound, $Script:DevConfigWingetNotFound); Error = $null }
+        @{ ExitCodes = @(0, 0); Error = '*still lists Ollama.Ollama*' }
+        @{ ExitCodes = @($Script:DevConfigWingetNotFound, 0); Error = '*still lists Ollama.Ollama*' }
+        @{ ExitCodes = @(7); Error = '*failed (7)*' }
+        @{ ExitCodes = @(0, 7); Error = '*failed (7)*' }
+    )) {
+        $calls = [Collections.Generic.List[string]]::new()
+        if ($case.Error) {
+            Assert-ThrowsLike { & $x64UninstallCode } $case.Error 'Desktop cleanup should reject real failures or a package that remains installed'
+        } else {
+            & $x64UninstallCode
+        }
+        Assert-Equal $calls.Count $case.ExitCodes.Count 'Desktop cleanup should verify absence only after an accepted uninstall result'
+        Assert-Equal $calls[0] 'uninstall' 'Desktop cleanup should request package removal first'
+        if ($calls.Count -gt 1) {
+            Assert-Equal $calls[1] 'list' 'Desktop cleanup should verify the resulting package state'
+        }
+    }
+}
 Assert-True ($installScript -match '\[switch\]\s*\$SkipModelSmoke') 'Ollama should expose model-smoke opt-out'
 Assert-True ($installScript -match '\[switch\]\s*\$PlanOnly') 'Ollama should expose non-mutating plan mode'
 Assert-True ($installScript -match '\[switch\]\s*\$Uninstall') 'Ollama should expose managed uninstall'
