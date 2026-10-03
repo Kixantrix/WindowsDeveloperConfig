@@ -39,6 +39,68 @@ Assert-True ($pytorch -match 'Ensure-AiVisualCppTools') 'PyTorch Triton should e
 Assert-True ($pytorch -match 'Ensure-AiCudaToolkit') 'PyTorch CUDA Triton should ensure the standalone CUDA toolkit'
 Assert-True ($pytorch -match 'Add-AiReportAcquisition') 'PyTorch should report its transitive acquisitions'
 
+$fixtureRoot = Join-Path $env:TEMP "devconfig-triton-plan-$([guid]::NewGuid().ToString('N'))"
+$testSourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+try {
+    foreach ($relativePath in @(
+        'Workloads\local-ai\install.ps1'
+        'Workloads\pytorch\install.ps1'
+        'Workloads\_common\ai-support.ps1'
+        'Workloads\_common\ai-catalog.psd1'
+        'Workloads\_common\ai-report.ps1'
+        'windows-dev-config\steps\_environment.ps1'
+    )) {
+        $destination = Join-Path $fixtureRoot $relativePath
+        New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $testSourceRoot $relativePath) -Destination $destination
+    }
+    @'
+. (Join-Path $PSScriptRoot 'ai-support.ps1')
+. (Join-Path $PSScriptRoot '..\..\windows-dev-config\steps\_environment.ps1')
+function Get-DevConfigArchitecture { 'X64' }
+function Get-AiDetectedVendor { 'None' }
+function Get-AmdGpuName {}
+function Get-IntelGpuName {}
+function Get-NvidiaDriverInfo {}
+function Get-NvidiaGpu {}
+function Assert-AiAdministrator { throw 'Plan tests must not apply changes.' }
+function Get-PythonEnvironmentVersions { throw 'Plan tests must not change the environment.' }
+function Ensure-AiWingetPackage {
+    param($Id, [switch] $PlanOnly)
+    if (-not $PlanOnly) { throw 'Plan tests must not install packages.' }
+    [pscustomobject]@{ Id = $Id; Action = 'install-or-upgrade'; Source = 'winget' }
+}
+'@ | Set-Content -LiteralPath (Join-Path $fixtureRoot 'Workloads\_common\direct-setup.ps1') -Encoding UTF8
+    @'
+param([string] $OutputPath)
+'{}' | Set-Content -LiteralPath $OutputPath -Encoding UTF8
+'@ | Set-Content -LiteralPath (Join-Path $fixtureRoot 'Workloads\_common\collect-ai-hardware.ps1') -Encoding UTF8
+    foreach ($case in @(
+        @{ RequireTriton = $false; Runtime = 'None' }
+        @{ RequireTriton = $true; Runtime = 'None' }
+        @{ RequireTriton = $true; Runtime = 'Ollama' }
+    )) {
+        $reportRoot = Join-Path $fixtureRoot "reports\$($case.RequireTriton)-$($case.Runtime)"
+        $messages = @(& (Join-Path $fixtureRoot 'Workloads\local-ai\install.ps1') `
+            -Backend CPU -PlanOnly -RequireTriton:$case.RequireTriton -Runtime $case.Runtime -ReportRoot $reportRoot 6>&1 |
+            ForEach-Object { $_.ToString() })
+        Assert-True (Test-Path -LiteralPath (Join-Path $reportRoot 'hardware.json') -PathType Leaf) 'Scenario planning should retain the inventory report'
+        $report = Get-Content -LiteralPath (Join-Path $reportRoot 'pytorch.json') -Raw | ConvertFrom-Json
+        Assert-True $report.result.planOnly 'The child report should identify plan mode'
+        Assert-True (-not $report.result.ready) 'Planning must not claim workload readiness'
+        Assert-Equal $report.request.RequireTriton $case.RequireTriton 'The scenario should forward the Triton requirement'
+        Assert-Equal $report.result.blockers.Count ([int]$case.RequireTriton) 'Required Triton should block the unsupported CPU plan'
+        Assert-Equal $report.acquisitions.Count 2 'A blocked plan should retain planned Python and PyTorch acquisitions'
+        Assert-Equal (@($report.phases | Where-Object name -eq 'triton')[0].status) 'unsupported' 'The report should identify unsupported CPU Triton'
+        Assert-Equal (@($messages | Where-Object { $_ -like 'PLAN_UNSUPPORTED: pytorch*' }).Count) ([int]$case.RequireTriton) 'The child should emit the correct planning marker'
+        Assert-Equal (@($messages | Where-Object { $_ -like 'LOCAL_AI_SCENARIO_UNSUPPORTED:*' }).Count) ([int]$case.RequireTriton) 'The scenario should report child blockers without throwing'
+        Assert-Equal (@($messages | Where-Object { $_ -like 'LOCAL_AI_SCENARIO_PLAN_OK:*' }).Count) ([int](-not $case.RequireTriton)) 'A blocked scenario must not claim plan success'
+        Assert-Equal (@($messages | Where-Object { $_ -like 'LOCAL_AI_SCENARIO_READY:*' }).Count) 0 'Planning must not emit the scenario readiness marker'
+    }
+} finally {
+    if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
+}
+
 $llama = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Workloads\llama.cpp\install.ps1') -Raw
 Assert-True ($llama -notmatch 'Ensure-AiCudaToolkit') 'llama.cpp CUDA assets should not independently install the full CUDA toolkit'
 Assert-True ($llama -match 'resolvedAssets') 'llama.cpp should report paired/runtime asset acquisition'

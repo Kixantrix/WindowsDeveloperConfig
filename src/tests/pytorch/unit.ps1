@@ -199,6 +199,33 @@ $rocmVersionsMissingVision = [pscustomobject]@{
 Assert-Equal (Get-PyTorchPackageAction -DesiredStateJson $rocmState -CurrentStateJson $rocmState -InstalledVersions $rocmVersionsMissingVision) 'Install' 'ROCm rerun should repair missing additional packages'
 
 $installScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Workloads\pytorch\install.ps1') -Raw
+$installAst = [Management.Automation.Language.Parser]::ParseInput($installScript, [ref]$null, [ref]$null)
+$requiredTritonCheck = @($installAst.EndBlock.Statements | Where-Object {
+    $_ -is [Management.Automation.Language.IfStatementAst] -and
+    $_.Clauses[0].Item1.Extent.Text -eq '$RequireTriton -and -not $plan.InstallTriton'
+})
+Assert-Equal $requiredTritonCheck.Count 1 'PyTorch should check required Triton after resolving the backend'
+$requiredTritonCode = [scriptblock]::Create($requiredTritonCheck[0].Extent.Text)
+& {
+    foreach ($plan in @($cpu, $arm, $rocm, $preTuringNewDriver, $cuda12, $cuda13, $xpu, $n1x)) {
+        foreach ($RequireTriton in @($false, $true)) {
+            foreach ($PlanOnly in @($false, $true)) {
+                $report = @{ result = @{ blockers = [Collections.ArrayList]::new() } }
+                $unsupported = $RequireTriton -and -not $plan.InstallTriton
+                $reason = "Triton Windows is required but unsupported: $($plan.TritonReason)"
+                if ($unsupported -and -not $PlanOnly) {
+                    Assert-ThrowsLike { & $requiredTritonCode } 'Triton Windows is required but unsupported:*' 'Unsupported required Triton must still fail during apply'
+                } else {
+                    & $requiredTritonCode
+                    Assert-Equal $report.result.blockers.Count ([int]$unsupported) 'Only unsupported required Triton should block planning'
+                    if ($unsupported) {
+                        Assert-Equal $report.result.blockers[0] $reason 'The plan blocker should retain the resolver reason'
+                    }
+                }
+            }
+        }
+    }
+}
 $supportScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Workloads\_common\ai-support.ps1') -Raw
 Assert-True ($installScript -match 'Get-PipInstallArguments -Requirement \$plan\.NumpyRequirement') 'PyTorch environment should include pinned NumPy'
 Assert-True ($installScript -like "*if (`$packageAction -eq 'VerifyOnly')*") 'PyTorch should branch around package work on a matching rerun'

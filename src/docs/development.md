@@ -422,6 +422,8 @@ require the standalone ROCm Core SDK. `XPU` installs the official XPU tuple and
 the standalone CUDA toolkit is acquired only when the selected Triton/JIT path
 needs native toolchain components. Use `-RequireTriton` when supported Triton
 execution is mandatory or `-SkipTriton` to disable it.
+With `-PlanOnly`, an unsupported `-RequireTriton` combination is reported as a
+blocker; apply runs fail.
 
 Vendor layer mapping:
 

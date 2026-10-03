@@ -154,7 +154,9 @@ $report.request.SelectedBackend = $plan.Backend
 $report.request.SelectedVendor = $plan.Vendor
 $report.request.SelectedDevice = $plan.DeviceName
 if ($RequireTriton -and -not $plan.InstallTriton) {
-    throw "Triton Windows is required but unsupported: $($plan.TritonReason)"
+    $message = "Triton Windows is required but unsupported: $($plan.TritonReason)"
+    if (-not $PlanOnly) { throw $message }
+    [void]$report.result.blockers.Add($message)
 }
 $catalog = (Get-AiCatalog).Components
 $component = if ($plan.Backend -eq 'CUDA' -and $architecture -eq 'Arm64') {
