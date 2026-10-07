@@ -359,8 +359,7 @@ llama.cpp `-Backend Auto` prefers **supported NVIDIA CUDA → supported AMD ROCm
 resolver takes every archive for a selection from one `bNNNNN` release, requires
 GitHub's SHA-256 digest for each asset, caches the verified archives under
 `%LOCALAPPDATA%\DevConfig\llama.cpp\asset-cache`, and atomically replaces the
-runtime. Qualcomm ARM64 is pinned to qualified release `b10917` because managed
-The specifically qualified `b10917` Adreno release remains selected until a
+runtime. The specifically qualified official `b10917` Adreno release remains selected until a
 newer official release passes the same functional acceptance.
 `llama-bench -o json` must identify the selected backend/device and
 diagnostics must report an actual nonzero `offloaded X/Y layers` result for
