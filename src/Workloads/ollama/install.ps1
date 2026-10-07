@@ -39,7 +39,6 @@ $component = if ($architecture -eq 'Arm64') {
 }
 $legacyPaths = Get-OllamaManagedPaths
 $modelRoot = if ($env:OLLAMA_MODELS) { $env:OLLAMA_MODELS } else { Join-Path $HOME '.ollama\models' }
-$manifestEvidence = Get-OllamaWingetManifestEvidence -Architecture $architecture
 $report = New-AiWorkloadReport -Id 'ollama' -Request @{
     Architecture = $architecture
     SkipModelSmoke = [bool]$SkipModelSmoke
@@ -59,7 +58,7 @@ function Add-OllamaAcquisition {
         [AllowNull()] $PackageEvidence,
         [AllowNull()] $MigrationEvidence
     )
-    Add-AiReportAcquisition -Report $report -Entry ([ordered]@{
+    $entry = [ordered]@{
         component = $component.Component
         vendor = $component.Vendor
         architecture = $architecture
@@ -73,17 +72,20 @@ function Add-OllamaAcquisition {
         expectedStableSource = $component.ExpectedStableSource
         migrationTrigger = $component.MigrationTrigger
         cleanupUpgrade = $component.CleanupUpgrade
-        selectedInstaller = [ordered]@{
+        legacyManagedArchiveMigration = $MigrationEvidence
+        action = $Action
+        packageEvidence = $PackageEvidence
+    }
+    if (-not $Uninstall) {
+        $entry.selectedInstaller = [ordered]@{
             applicable = $manifestEvidence.Applicable
             architecture = $manifestEvidence.Architecture
             version = $manifestEvidence.Version
             url = $manifestEvidence.InstallerUrl
             sha256 = $manifestEvidence.InstallerSha256
         }
-        legacyManagedArchiveMigration = $MigrationEvidence
-        action = $Action
-        packageEvidence = $PackageEvidence
-    })
+    }
+    Add-AiReportAcquisition -Report $report -Entry $entry
 }
 
 function Remove-OllamaPortablePackage {
@@ -204,6 +206,8 @@ if ($Uninstall) {
     Write-Host "OLLAMA_UNINSTALLED: models-preserved=$(-not $RemoveModels)"
     return
 }
+
+$manifestEvidence = Get-OllamaWingetManifestEvidence -Architecture $architecture
 
 try {
     $configuredApi = Get-OllamaLocalEndpoint

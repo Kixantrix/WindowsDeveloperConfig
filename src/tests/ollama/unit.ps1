@@ -116,6 +116,58 @@ Assert-True ($installScript -notmatch 'Install-VerifiedGitHubLatestAsset') 'Olla
 Assert-True ($installScript -notmatch 'Set-OllamaStartupRegistration') 'Ollama should no longer create a Dev Config startup registration'
 Assert-True ($installScript -notmatch 'native-arm64-managed-archive') 'User-facing reports should use normal installed application semantics'
 
+$tokens = $null
+$parseErrors = $null
+$installAst = [Management.Automation.Language.Parser]::ParseInput($installScript, [ref]$tokens, [ref]$parseErrors)
+Assert-Equal $parseErrors.Count 0 'Ollama installer should parse'
+$statements = @($installAst.EndBlock.Statements)
+$lookup = @($statements | Where-Object { $_.Extent.Text -like '$manifestEvidence = Get-OllamaWingetManifestEvidence*' })
+$uninstallBranch = @($statements | Where-Object {
+    $_ -is [Management.Automation.Language.IfStatementAst] -and $_.Clauses[0].Item1.Extent.Text -eq '$Uninstall'
+})
+$reportInitialization = @($statements | Where-Object { $_.Extent.Text -like '$report = New-AiWorkloadReport*' })
+Assert-Equal $lookup.Count 1 'Manifest lookup should occur once at script scope'
+Assert-Equal $uninstallBranch.Count 1 'Installer should have one uninstall branch'
+Assert-True ($lookup[0].Extent.StartOffset -gt $uninstallBranch[0].Extent.EndOffset) 'Uninstall should finish before manifest lookup'
+Assert-True ($lookup[0].Extent.StartOffset -gt $reportInitialization[0].Extent.EndOffset) 'Report should exist before manifest lookup'
+Assert-Equal $uninstallBranch[0].Clauses[0].Item2.Statements[-1].GetType().Name 'ReturnStatementAst' 'Uninstall should return before manifest lookup'
+
+& {
+    . (Join-Path $PSScriptRoot '..\..\Workloads\_common\ai-report.ps1')
+    $helper = $statements | Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -eq 'Add-OllamaAcquisition'
+    }
+    . ([scriptblock]::Create($helper.Extent.Text))
+    $component = $catalog.OllamaX64
+    $architecture = 'X64'
+    $report = @{ acquisitions = [Collections.ArrayList]::new() }
+    $Uninstall = $true
+    Add-OllamaAcquisition -Action 'uninstalled' -PackageEvidence $null -MigrationEvidence $null
+    Assert-True (-not $report.acquisitions[0].Contains('selectedInstaller')) 'Uninstall reporting should not require manifest evidence'
+
+    $Uninstall = $false
+    $manifestEvidence = [pscustomobject]@{
+        Applicable = $true; Architecture = 'X64'; Version = '0.40.0'
+        InstallerUrl = 'https://example.invalid/OllamaSetup.exe'; InstallerSha256 = 'test-digest'
+    }
+    Add-OllamaAcquisition -Action 'installed' -PackageEvidence $null -MigrationEvidence $null
+    Assert-Equal $report.acquisitions[1].selectedInstaller.version '0.40.0' 'Install reporting should retain manifest evidence'
+
+    function Write-DevConfigTextFile {
+        param($Path, $Content)
+        Assert-Equal $Path 'mock-report.json' 'Manifest failures should use the requested report path'
+        $script:ollamaFailureReport = $Content | ConvertFrom-Json
+    }
+    $report = @{ completedAtUtc = $null; result = @{ ready = $true; blockers = [Collections.ArrayList]::new() } }
+    $ReportPath = 'mock-report.json'
+    function Get-OllamaWingetManifestEvidence { param($Architecture) throw 'mock manifest failure' }
+    $failureCode = ($installAst.EndBlock.Traps.Extent.Text -join [Environment]::NewLine) + [Environment]::NewLine + $lookup[0].Extent.Text
+    Assert-ThrowsLike { & ([scriptblock]::Create($failureCode)) } '*mock manifest failure*' 'Manifest lookup failures should preserve the original error'
+    Assert-True (-not $script:ollamaFailureReport.result.ready) 'Manifest lookup failures should produce a failed report'
+    Assert-Equal $script:ollamaFailureReport.result.blockers[0] 'mock manifest failure' 'Failure report should record the manifest error'
+    Remove-Variable -Name ollamaFailureReport -Scope Script
+}
+
 function Get-CimInstance {
     @(
         [pscustomobject]@{
