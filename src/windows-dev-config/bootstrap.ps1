@@ -211,6 +211,9 @@ function Invoke-CalmOsBootstrap {
     if ($InstallRoot -notmatch '^[A-Za-z]:\\[^:]+$') {
         throw '-InstallRoot must be a local directory, not a drive root or network path.'
     }
+    if ($ReportRoot) {
+        $ReportRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ReportRoot)
+    }
 
     foreach ($scope in @('MachinePolicy', 'UserPolicy')) {
         $policy = Get-ExecutionPolicy -Scope $scope

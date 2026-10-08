@@ -252,6 +252,32 @@ $elevationBranch = $bootstrapAst.Find({
     $node -is [Management.Automation.Language.IfStatementAst] -and
         $node.Clauses[0].Item1.Extent.Text -match '\$principal\.IsInRole'
 }, $true)
+$reportNormalization = @($bootstrapAst.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.IfStatementAst] -and
+        $node.Clauses[0].Item1.Extent.Text -eq '$ReportRoot' -and
+        $node.Extent.Text -match 'GetUnresolvedProviderPathFromPSPath'
+}, $true))
+Assert-Equal $reportNormalization.Count 1 'Bootstrap should normalize a supplied report root once'
+Assert-True ($reportNormalization[0].Extent.EndOffset -lt $elevationBranch.Extent.StartOffset) 'Report root should be normalized before elevation'
+& {
+    $normalizeReportRoot = [scriptblock]::Create($reportNormalization[0].Extent.Text)
+    foreach ($path in @('', ".\AI reports\O'Brien", "C:\AI reports\O'Brien", '\\server\share\reports')) {
+        $ReportRoot = $path
+        $expected = if ($path) {
+            $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path)
+        } else { '' }
+        . $normalizeReportRoot
+        Assert-Equal $ReportRoot $expected 'Report root should resolve against the caller without requiring an existing directory'
+        Push-Location $env:SystemRoot
+        try {
+            . $normalizeReportRoot
+            Assert-Equal $ReportRoot $expected 'Normalized report root should remain stable in a different child directory'
+        } finally {
+            Pop-Location
+        }
+    }
+}
 $elevationBody = $elevationBranch.Clauses[0].Item2.Extent.Text
 $invokeElevation = [scriptblock]::Create($elevationBody.Substring(1, $elevationBody.Length - 2))
 & {
